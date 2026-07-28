@@ -1,8 +1,15 @@
 import { Client, type Room } from '@colyseus/sdk';
-import type { MoveTargetCommand, RestartCommand } from '../game/index.ts';
+import type { JoinOptions, MoveTargetCommand, RestartCommand } from '../game/index.ts';
 import { EMPTY_SNAPSHOT, readSnapshot, type ClientStatus, type CoopSnapshot } from './state.ts';
 
 const SEAT_KEY = 'the-coop:seat';
+
+export const TRANSITION_MESSAGES = Object.freeze({
+  replay: 'restartLevel',
+  advance: 'nextLevel',
+  replayed: 'levelRestarted',
+  advanced: 'levelAdvanced',
+});
 
 interface SavedSeat {
   roomId: string;
@@ -15,6 +22,7 @@ export interface ConnectionEvents {
   onSeat: (seat: number | null) => void;
   onMoveResult: (result: { accepted: boolean; reason?: string; routeKind?: string }) => void;
   onRestarted: () => void;
+  onAdvanced: () => void;
   onAbandoned: () => void;
 }
 
@@ -91,9 +99,9 @@ export class CoopNetwork {
     await this.#connect(() => this.#client.create('coop'));
   }
 
-  async join(roomId: string): Promise<void> {
+  async join(roomId: string, options?: JoinOptions): Promise<void> {
     this.#events.onStatus('joining');
-    await this.#connect(() => this.#client.joinById(roomId));
+    await this.#connect(() => this.#client.joinById(roomId, options));
   }
 
   async reconnectIfMatching(roomId: string): Promise<boolean> {
@@ -110,7 +118,8 @@ export class CoopNetwork {
   }
 
   sendMove(command: MoveTargetCommand): void { this.#room?.send('moveTarget', command); }
-  restart(command: RestartCommand): void { this.#room?.send('restartLevel', command); }
+  restart(command: RestartCommand): void { this.#room?.send(TRANSITION_MESSAGES.replay, command); }
+  advance(command: RestartCommand): void { this.#room?.send(TRANSITION_MESSAGES.advance, command); }
 
   dispose(clearSeat = false): void {
     for (const dispose of this.#disposers.splice(0)) dispose();
@@ -188,8 +197,9 @@ export class CoopNetwork {
         ...(typeof result.routeKind === 'string' ? { routeKind: result.routeKind } : {}),
       });
     }));
-    this.#disposers.push(room.onMessage('levelRestarted', () => this.#events.onRestarted()));
+    this.#disposers.push(room.onMessage(TRANSITION_MESSAGES.replayed, () => this.#events.onRestarted()));
     this.#disposers.push(room.onMessage('restarted', () => this.#events.onRestarted()));
+    this.#disposers.push(room.onMessage(TRANSITION_MESSAGES.advanced, () => this.#events.onAdvanced()));
     this.#disposers.push(room.onMessage('sessionAbandoned', () => {
       clearSavedSeat();
       this.#events.onAbandoned();

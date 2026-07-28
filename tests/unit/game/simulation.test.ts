@@ -139,10 +139,14 @@ describe('authoritative fixed-step simulation', () => {
     state = place(state, 0, point(20, 6));
     state = stepGame(state);
     expect(state.phase).toBe('playing');
-    state = place(state, 1, point(20, 5));
+    state = place(state, 0, point(20, 6), [point(21, 6)]);
+    state = place(state, 1, point(20, 5), [point(21, 5)]);
     state = stepGame(state);
     expect(state.phase).toBe('completed');
     expect(state.completedAtTick).toBe(2);
+    expect(state.players.every(
+      ({ route, routeKind }) => route.length === 0 && routeKind === 'none',
+    )).toBe(true);
   });
 
   it('pauses movement during reconnect grace and deterministically restarts', () => {
@@ -158,7 +162,12 @@ describe('authoritative fixed-step simulation', () => {
     expect(state.phase).toBe('playing');
 
     const [restarted, event] = restartGame(state, { seq: 1 });
-    expect(event).toEqual({ type: 'restarted', tick: 0 });
+    expect(event).toMatchObject({
+      type: 'restarted',
+      tick: 0,
+      levelId: 'level_1',
+      levelEpoch: 1,
+    });
     expect(restarted.players[0].position).toEqual(point(3, 5));
     expect(restarted.players[0].lastMoveSeq).toBe(-1);
     expect(restarted.phase).toBe('playing');

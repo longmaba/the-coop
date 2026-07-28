@@ -1,5 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeSeatPayload } from '../../../src/client/network.ts';
+import {
+  normalizeSeatPayload,
+  TRANSITION_MESSAGES,
+} from '../../../src/client/network.ts';
+
+describe('campaign transition protocol', () => {
+  it('uses the authoritative replay and advancement message names', () => {
+    expect(TRANSITION_MESSAGES).toEqual({
+      replay: 'restartLevel',
+      advance: 'nextLevel',
+      replayed: 'levelRestarted',
+      advanced: 'levelAdvanced',
+    });
+  });
+});
 
 describe('normalizeSeatPayload', () => {
   it('accepts canonical one-based slots and legacy zero-based seats', () => {

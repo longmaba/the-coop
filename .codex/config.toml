@@ -1,0 +1,17 @@
+[mcp_servers.the_coop_teammate]
+command = "node"
+args = ["--import", "tsx", "src/mcp/server.ts"]
+cwd = "P:\\projects\\the-coop"
+startup_timeout_sec = 10
+tool_timeout_sec = 20
+enabled_tools = ["start_game", "observe_game", "move_player_two"]
+default_tools_approval_mode = "prompt"
+
+[mcp_servers.the_coop_teammate.tools.start_game]
+approval_mode = "approve"
+
+[mcp_servers.the_coop_teammate.tools.observe_game]
+approval_mode = "approve"
+
+[mcp_servers.the_coop_teammate.tools.move_player_two]
+approval_mode = "approve"

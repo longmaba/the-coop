@@ -22,7 +22,12 @@
     "@colyseus/schema": "4.0.30",
     "@colyseus/sdk": "0.17.43",
     "@colyseus/ws-transport": "0.17.13",
-    "phaser": "4.2.1"
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "phaser": "4.2.1",
+    "zod": "4.4.3"
+  },
+  "overrides": {
+    "@hono/node-server": "2.0.12"
   },
   "devDependencies": {
     "@playwright/test": "1.62.0",

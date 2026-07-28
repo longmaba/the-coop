@@ -3,10 +3,11 @@ import type { MoveTargetCommand, RestartCommand, WorldPoint } from '../game/inde
 import { CueAudio } from './audio.ts';
 import { FacilityScene } from './facility-scene.ts';
 import { CoopNetwork, savedRoomId } from './network.ts';
+import { campaignPresentation } from './presentation.ts';
 import {
   cloneSnapshot,
   EMPTY_SNAPSHOT,
-  nextRestartSequence,
+  nextTransitionSequence,
   type ClientStatus,
   type CoopSnapshot,
 } from './state.ts';
@@ -24,13 +25,27 @@ let game: Phaser.Game | null = null;
 let facility: FacilityScene | null = null;
 let snapshot: CoopSnapshot = cloneSnapshot(EMPTY_SNAPSHOT);
 let moveSeq = 0;
-let restartSeq = 0;
+let transitionSeq = 0;
 let status: ClientStatus = 'landing';
 let statusDetail = '';
 
 const roomIdFromUrl = (): string | null => {
   const value = new URLSearchParams(window.location.search).get('room')?.trim() ?? '';
   return /^[A-Za-z0-9_-]{4,128}$/.test(value) ? value : null;
+};
+
+interface PairingInvite {
+  roomId: string;
+  pairingToken: string;
+}
+
+const pairingInviteFromUrl = (): PairingInvite | null => {
+  const params = new URLSearchParams(window.location.hash.slice(1));
+  const roomId = params.get('room')?.trim() ?? '';
+  const pairingToken = params.get('pair')?.trim() ?? '';
+  return /^[A-Za-z0-9_-]{4,128}$/.test(roomId) && /^[A-Za-z0-9_-]{40,128}$/.test(pairingToken)
+    ? { roomId, pairingToken }
+    : null;
 };
 
 function element<T extends HTMLElement>(selector: string): T | null { return app.querySelector<T>(selector); }
@@ -69,7 +84,7 @@ function landing(error = ''): void {
         </div>
         <section class="instructions" aria-label="How to play">
           <h2>Two seats. One exit.</h2>
-          <p>Click your explorer’s destination. One player holds Plate A while the other crosses to Plate B, opening the mechanical door.</p>
+          <p>Click your explorer’s destination. Hold controls for your partner, collect shared keycards, and unlock each facility gate.</p>
           <p>Movement is pointer-only; the server owns every route and outcome.</p>
         </section>
       </section>
@@ -86,13 +101,14 @@ function gameShell(): void {
     <main class="game-shell" data-testid="game-shell">
       <header class="hud" aria-label="Game status">
         <div><span class="hud-label">YOU</span> <strong data-testid="local-player">Connecting…</strong></div>
+        <div class="level-heading"><span class="hud-label" data-testid="level-indicator">LEVEL 1 OF 4</span> <strong data-testid="level-name">Pressure Lock</strong></div>
         <div><span class="hud-label">ROOM</span> <code data-testid="hud-room-code">—</code> <button type="button" data-testid="copy-room-code">Copy code</button> <button type="button" data-testid="copy-invite">Copy invite</button></div>
         <div><span class="hud-label">PARTNER</span> <strong data-testid="partner-status">Waiting for seat 2</strong></div>
         <button class="icon-button" type="button" data-testid="mute-toggle" aria-pressed="false">Sound on</button>
         <button class="quiet-button" type="button" data-testid="return-to-lobby">Leave room</button>
       </header>
       <p class="objective" data-testid="objective" aria-live="polite">Waiting for both explorers…</p>
-      <p id="game-help" class="sr-only">Puzzle facility. Click a destination to move your explorer. Stand on either pressure plate to hold the door open for your partner.</p>
+      <p id="game-help" class="sr-only">Puzzle facility. Click a destination to move your explorer. Coordinate movement-triggered controls with your partner and get both explorers to the exit.</p>
       <div id="phaser-root" class="phaser-root" role="application" aria-describedby="game-help" aria-label="The Coop puzzle facility"></div>
       <div class="connection-overlay" data-testid="reconnect-overlay" role="status" aria-live="polite" hidden><strong>Reconnecting</strong><span>Connection lost. Retrying…</span></div>
       <div class="error-overlay" data-testid="error-overlay" role="alertdialog" aria-modal="true" hidden>
@@ -100,8 +116,11 @@ function gameShell(): void {
         <button class="primary" type="button" data-testid="error-to-lobby">Return to lobby</button>
       </div>
       <div class="completion-overlay" data-testid="completion-overlay" role="dialog" aria-modal="true" hidden>
-        <p class="eyebrow">Facility cleared</p><h2>Both explorers made it out.</h2>
-        <button class="primary" type="button" data-testid="restart-level">Restart level</button>
+        <p class="eyebrow">Facility cleared</p><h2 data-testid="completion-title">Both explorers made it out.</h2>
+        <div class="completion-actions">
+          <button class="primary" type="button" data-testid="advance-level">Next Level</button>
+          <button type="button" data-testid="restart-level">Replay Level</button>
+        </div>
       </div>
       <div class="abandoned-overlay" data-testid="abandoned-overlay" role="alertdialog" aria-modal="true" hidden>
         <h2>Session ended</h2><p data-testid="abandoned-detail">Your partner did not reconnect in time.</p>
@@ -116,7 +135,11 @@ function gameShell(): void {
   element<HTMLButtonElement>('[data-testid="error-to-lobby"]')?.addEventListener('click', returnToLobby);
   element<HTMLButtonElement>('[data-testid="restart-level"]')?.addEventListener('click', () => {
     audio.unlock();
-    requestRestart();
+    requestReplay();
+  });
+  element<HTMLButtonElement>('[data-testid="advance-level"]')?.addEventListener('click', () => {
+    audio.unlock();
+    requestAdvance();
   });
 }
 
@@ -146,9 +169,17 @@ function sendTarget(target: WorldPoint): void {
   network?.sendMove({ seq: ++moveSeq, worldX: target.x, worldY: target.y } satisfies MoveTargetCommand);
 }
 
-function requestRestart(): void {
-  restartSeq = nextRestartSequence(restartSeq, snapshot.levelEpoch);
-  network?.restart({ seq: restartSeq } satisfies RestartCommand);
+function nextTransitionCommand(): RestartCommand {
+  transitionSeq = nextTransitionSequence(transitionSeq, snapshot.levelEpoch);
+  return { seq: transitionSeq };
+}
+
+function requestReplay(): void {
+  network?.restart(nextTransitionCommand());
+}
+
+function requestAdvance(): void {
+  network?.advance(nextTransitionCommand());
 }
 
 function toggleMute(): void {
@@ -163,15 +194,18 @@ function renderHud(): void {
   const localPlayer = localSeat === null || localSeat === undefined ? 'Assigning seat…' : `Explorer ${localSeat + 1}`;
   const partner = snapshot.players.find((player) => player.id !== network?.playerId);
   const partnerStatus = partner === undefined ? 'Waiting for the second seat' : partner.connected ? 'Connected' : 'Reconnecting';
+  const campaign = campaignPresentation(snapshot);
   setText('[data-testid="local-player"]', localPlayer);
+  setText('[data-testid="level-indicator"]', campaign.levelIndicator);
+  setText('[data-testid="level-name"]', snapshot.levelName);
   setText('[data-testid="hud-room-code"]', formatRoomCode());
   setText('[data-testid="partner-status"]', partnerStatus);
   const objective = snapshot.phase === 'completed'
-    ? 'Exit secured. Either explorer can restart.'
+    ? campaign.completionObjective
     : snapshot.phase === 'reconnectGrace'
       ? `Partner reconnect window: ${Math.ceil(snapshot.reconnectRemainingSeconds)}s`
       : snapshot.phase === 'playing'
-        ? snapshot.doorOpen ? 'Door open: get both explorers into the exit zone.' : 'Stand on either pressure plate to hold the door open.'
+        ? snapshot.objective
         : 'Waiting for both explorers to connect.';
   setText('[data-testid="objective"]', objective);
   const mute = element<HTMLButtonElement>('[data-testid="mute-toggle"]');
@@ -184,7 +218,12 @@ function renderHud(): void {
     setText('[data-testid="error-detail"]', statusDetail || 'The game server could not be reached.');
   }
   const complete = element<HTMLElement>('[data-testid="completion-overlay"]');
-  if (complete !== null) complete.hidden = snapshot.phase !== 'completed';
+  if (complete !== null) {
+    complete.hidden = snapshot.phase !== 'completed';
+    setText('[data-testid="completion-title"]', campaign.completionTitle);
+    const advance = element<HTMLButtonElement>('[data-testid="advance-level"]');
+    if (advance !== null) advance.textContent = campaign.advanceLabel;
+  }
   const abandoned = element<HTMLElement>('[data-testid="abandoned-overlay"]');
   if (abandoned !== null) { abandoned.hidden = status !== 'abandoned' && snapshot.phase !== 'abandoned'; setText('[data-testid="abandoned-detail"]', statusDetail || 'Your partner did not reconnect in time.'); }
 }
@@ -199,6 +238,7 @@ function createNetwork(): CoopNetwork {
       audio.play(result.accepted ? 'click' : 'rejection');
     },
     onRestarted() { renderHud(); },
+    onAdvanced() { renderHud(); },
     onAbandoned() { status = 'abandoned'; statusDetail = 'Your partner did not reconnect in time.'; renderHud(); },
   });
 }
@@ -210,7 +250,7 @@ async function startCreate(): Promise<void> {
   try { await network.create(); } catch { showConnectionError(); }
 }
 
-async function startJoin(rawRoomId: string): Promise<void> {
+async function startJoin(rawRoomId: string, pairingToken?: string): Promise<void> {
   const roomId = rawRoomId.trim();
   if (!/^[A-Za-z0-9_-]{4,128}$/.test(roomId)) { landing('Enter a valid room code.'); return; }
   gameShell();
@@ -218,7 +258,17 @@ async function startJoin(rawRoomId: string): Promise<void> {
   network = createNetwork();
   try {
     const restored = await network.reconnectIfMatching(roomId);
-    if (!restored) await network.join(roomId);
+    if (!restored) {
+      await network.join(roomId, pairingToken === undefined ? undefined : {
+        roomMode: 'human-ai',
+        controllerKind: 'human',
+        playerId: 'player-1',
+        pairingToken,
+      });
+    }
+    if (pairingToken !== undefined) {
+      history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
+    }
   } catch { showConnectionError(); }
 }
 
@@ -237,7 +287,7 @@ function returnToLobby(): void {
   network = null;
   snapshot = cloneSnapshot(EMPTY_SNAPSHOT);
   moveSeq = 0;
-  restartSeq = 0;
+  transitionSeq = 0;
   status = 'landing';
   statusDetail = '';
   history.replaceState(null, '', window.location.pathname);
@@ -252,7 +302,8 @@ function installDiagnostics(): void {
     get playerId(): string | null { return network?.playerId ?? null; },
     worldToScreen(point: WorldPoint): WorldPoint { return facility?.worldToScreen(point) ?? { x: 64 + point.x, y: 72 + point.y }; },
     sendMoveTarget(point: WorldPoint): void { sendTarget(point); },
-    restartLevel(): void { requestRestart(); },
+    restartLevel(): void { requestReplay(); },
+    nextLevel(): void { requestAdvance(); },
   };
   Object.assign(window, { __THE_COOP_E2E__: bridge });
 }
@@ -261,5 +312,6 @@ declare global { interface Window { __THE_COOP_E2E__?: unknown; } }
 
 landing();
 installDiagnostics();
-const startupRoom = roomIdFromUrl() ?? savedRoomId();
-if (startupRoom !== null) void startJoin(startupRoom);
+const pairingInvite = pairingInviteFromUrl();
+const startupRoom = pairingInvite?.roomId ?? roomIdFromUrl() ?? savedRoomId();
+if (startupRoom !== null) void startJoin(startupRoom, pairingInvite?.pairingToken);

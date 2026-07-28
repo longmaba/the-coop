@@ -25,11 +25,14 @@ input:focus-visible { outline: 2px solid #9eeefa; outline-offset: 2px; }
 .hud { display: flex; align-items: center; justify-content: space-between; gap: .6rem; max-width: 1280px; width: 100%; margin: 0 auto; padding: .6rem .8rem; border: 1px solid #345b64; border-radius: 9px; background: #0c2027; font-size: .86rem; }
 .hud code { color: #baf6ff; }
 .hud button { padding: .35rem .55rem; font-size: .78rem; }
+.level-heading { display: grid; min-width: 9rem; gap: .12rem; text-align: center; }
+.level-heading strong { color: #eaffff; }
 .objective { max-width: 1280px; width: 100%; margin: .55rem auto; color: #b9dce0; text-align: center; }
 .phaser-root { display: grid; min-height: 0; place-items: center; width: 100%; overflow: hidden; }
 .phaser-root canvas { display: block; max-width: 100%; max-height: calc(100vh - 120px); }
 .connection-overlay, .error-overlay, .completion-overlay, .abandoned-overlay { position: absolute; z-index: 3; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(92vw, 450px); padding: 1.5rem; border: 1px solid #91dce8; border-radius: 12px; background: #0b2028f2; box-shadow: 0 16px 48px #000b; text-align: center; }
 .connection-overlay { display: grid; gap: .4rem; }
 .completion-overlay h2, .error-overlay h2, .abandoned-overlay h2 { margin: .25rem 0 1rem; }
+.completion-actions { display: flex; justify-content: center; gap: .7rem; }
 .quiet-button { border-color: #765462 !important; color: #f4c9d1; }
-@media (max-width: 760px) { .hud { flex-wrap: wrap; justify-content: center; } .hud > div { text-align: center; } .game-shell { padding: .35rem; } .objective { font-size: .86rem; } }
+@media (max-width: 900px) { .hud { flex-wrap: wrap; justify-content: center; } .hud > div { text-align: center; } .game-shell { padding: .35rem; } .objective { font-size: .86rem; } }
