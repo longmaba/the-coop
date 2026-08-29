@@ -18,6 +18,8 @@ npm run dev
 
 Open `http://127.0.0.1:5173` in one browser profile, select **Create Room**, then use the displayed room code or invite URL in a second browser profile. Session storage is isolated per profile, so two separate profiles or private windows are the most reliable local setup.
 
+When the game is open in ChatGPT desktop's built-in browser, the page registers a top-level Site Tool named `chat`. Calling it with `{ "message": "Hold Plate A" }` displays the message in the active game for five seconds; a newer message replaces it and restarts that timer. Messages are limited to 500 Unicode characters. On the landing page the tool returns `NO_ACTIVE_GAME`, and ordinary browsers without `document.modelContext` continue to run the game without registering the tool.
+
 Movement is pointer-only: click a reachable destination and the authoritative server computes the route. A click beyond a closed door stops the explorer at the threshold; after a partner opens the door, click the destination again.
 
 The development launcher watches both client and authoritative game/server

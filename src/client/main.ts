@@ -2,6 +2,7 @@ import type { MoveTargetCommand, RestartCommand, WorldPoint } from '../game/inde
 import { CueAudio } from './audio.ts';
 import { CoopNetwork, savedRoomId } from './network.ts';
 import { campaignPresentation } from './presentation.ts';
+import { TransientChatPopup } from './transient-chat.ts';
 import {
   isThreeAssetLibraryReady,
   preloadThreeAssets,
@@ -14,6 +15,7 @@ import {
   type ClientStatus,
   type CoopSnapshot,
 } from './state.ts';
+import { registerChatTool } from './webmcp.ts';
 import './styles.css';
 
 const app: HTMLElement = (() => {
@@ -31,6 +33,21 @@ let transitionSeq = 0;
 let lifecycleGeneration = 0;
 let status: ClientStatus = 'landing';
 let statusDetail = '';
+
+const chatPopup = new TransientChatPopup({
+  show(message) {
+    const popup = element<HTMLElement>('[data-testid="chat-popup"]');
+    const text = element<HTMLElement>('[data-testid="chat-message"]');
+    if (popup === null || text === null) return false;
+    text.textContent = message;
+    popup.hidden = false;
+    return true;
+  },
+  hide() {
+    const popup = element<HTMLElement>('[data-testid="chat-popup"]');
+    if (popup !== null) popup.hidden = true;
+  },
+});
 
 const roomIdFromUrl = (): string | null => {
   const value = new URLSearchParams(window.location.search).get('room')?.trim() ?? '';
@@ -68,6 +85,7 @@ async function copy(text: string): Promise<void> {
 
 function landing(error = ''): void {
   lifecycleGeneration += 1;
+  chatPopup.clear();
   facility?.destroy();
   facility = null;
   app.innerHTML = `
@@ -103,6 +121,7 @@ function landing(error = ''): void {
 }
 
 function gameShell(): void {
+  chatPopup.clear();
   app.innerHTML = `
     <main class="game-shell" data-testid="game-shell">
       <header class="hud" aria-label="Game status">
@@ -114,6 +133,10 @@ function gameShell(): void {
         <button class="quiet-button" type="button" data-testid="return-to-lobby">Leave room</button>
       </header>
       <p class="objective" data-testid="objective" aria-live="polite">Waiting for both explorers…</p>
+      <aside class="chat-popup" data-testid="chat-popup" role="status" aria-live="polite" aria-atomic="true" hidden>
+        <span class="chat-popup-label" aria-hidden="true">Agent message</span>
+        <p data-testid="chat-message"></p>
+      </aside>
       <p id="game-help" class="sr-only">Puzzle facility. Click a destination to move your explorer. Coordinate movement-triggered controls with your partner and get both explorers to the exit.</p>
       <div id="facility-root" class="facility-root" role="application" aria-describedby="game-help" aria-label="The Coop puzzle facility"></div>
       <div class="asset-loading-overlay" data-testid="asset-loading-overlay" role="status" aria-live="polite">
@@ -366,6 +389,7 @@ function installDiagnostics(): void {
 declare global { interface Window { __THE_COOP_E2E__?: unknown; } }
 
 landing();
+registerChatTool((message) => chatPopup.show(message));
 installDiagnostics();
 const pairingInvite = pairingInviteFromUrl();
 const startupRoom = pairingInvite?.roomId ?? roomIdFromUrl() ?? savedRoomId();

@@ -37,6 +37,10 @@ interface Diagnostics {
   sendMoveTarget(point: { x: number; y: number }): void;
 }
 
+interface BrowserChatTool {
+  execute(input: unknown): unknown;
+}
+
 const CELL_SIZE = 48;
 const center = (x: number, y: number) => ({
   x: (x + 0.5) * CELL_SIZE,
@@ -184,6 +188,42 @@ async function captureGate(
     clip,
   });
 }
+
+test('browser chat tool composes with the active game popup lifecycle', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chrome', 'The browser API composition path runs once.');
+  test.setTimeout(20_000);
+  await page.addInitScript(() => {
+    const browserWindow = window as Window & { __CHAT_TOOL__?: BrowserChatTool };
+    Object.defineProperty(document, 'modelContext', {
+      configurable: true,
+      value: {
+        registerTool(tool: BrowserChatTool) { browserWindow.__CHAT_TOOL__ = tool; },
+      },
+    });
+  });
+  await page.goto('/?e2e=1');
+
+  const inactiveResult = await page.evaluate(() =>
+    (window as Window & { __CHAT_TOOL__?: BrowserChatTool }).__CHAT_TOOL__?.execute({ message: 'Too early' }));
+  expect(inactiveResult).toMatchObject({ displayed: false, error: { code: 'NO_ACTIVE_GAME' } });
+
+  await page.getByTestId('create-room').click();
+  await expect(page.getByTestId('game-shell')).toBeVisible();
+  const firstResult = await page.evaluate(() =>
+    (window as Window & { __CHAT_TOOL__?: BrowserChatTool }).__CHAT_TOOL__?.execute({ message: '<b>Meet at the gate</b>' }));
+  expect(firstResult).toEqual({ displayed: true, dismissAfterMs: 5_000 });
+  await expect(page.getByTestId('chat-popup')).toBeVisible();
+  await expect(page.getByTestId('chat-message')).toHaveText('<b>Meet at the gate</b>');
+  await expect(page.getByTestId('chat-message').locator('b')).toHaveCount(0);
+
+  await page.waitForTimeout(250);
+  await page.evaluate(() =>
+    (window as Window & { __CHAT_TOOL__?: BrowserChatTool }).__CHAT_TOOL__?.execute({ message: 'Hold Plate A' }));
+  await expect(page.getByTestId('chat-message')).toHaveText('Hold Plate A');
+  await page.waitForTimeout(4_800);
+  await expect(page.getByTestId('chat-popup')).toBeVisible();
+  await expect(page.getByTestId('chat-popup')).toBeHidden({ timeout: 1_000 });
+});
 
 test('two isolated clients solve, reconnect, and restart the authoritative puzzle', async ({ browser, page }, testInfo) => {
   test.setTimeout(60_000);
