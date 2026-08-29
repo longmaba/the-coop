@@ -4,7 +4,7 @@ Date: 2026-08-29
 
 ## Status
 
-Active
+Completed
 
 ## Outcome
 
@@ -74,9 +74,9 @@ Out of scope:
 ## Progress
 
 - [x] Confirm the current frontend/server boundary and Sites runtime limits.
-- [ ] Implement the Sites build, D1 schema, hosted API, and client transport.
-- [ ] Run focused, repository-wide, and two-browser validation.
-- [ ] Save and privately deploy the validated Site version.
+- [x] Implement the Sites build, D1 schema, hosted API, and client transport.
+- [x] Run focused, repository-wide, and two-browser validation.
+- [x] Save and privately deploy the validated Site version.
 
 ## Decisions
 
@@ -100,6 +100,20 @@ Out of scope:
 
 ## Result
 
-Complete after implementation. Record the production URL, verified multiplayer
-behavior, local-server regression status, access limitation, and any remaining
-hosting risks before moving this plan to `docs/plans/completed/`.
+Published Sites version 1 from commit
+`3ec6af8a4029c49c931f4b5b566b400bdaac2408` at
+<https://the-coop-game.longmaba.chatgpt.site>.
+
+- The hosted two-browser Playwright campaign passed, including room creation,
+  joining, authoritative movement, completion, saved-seat reload, and restart.
+- The original local Chrome E2E suite passed all four tests, including the
+  Colyseus reconnect path and both browser-to-MCP teammate campaign journeys.
+- Lint, both TypeScript configurations, 17 test files with 137 tests, the
+  normal build, and the Sites build passed. The production dependency audit
+  reported zero vulnerabilities.
+- Sites reports the deployment as succeeded with `custom` access, one allowed
+  user (the owner), and zero allowed groups. An unauthenticated request returns
+  HTTP 401, and the post-deployment Worker error log query returned no events.
+- Hosted play supports a browser partner. The Codex/MCP teammate remains on
+  the unchanged local server path. Keep access owner-only until public abuse
+  controls and asset redistribution rights are reviewed.
