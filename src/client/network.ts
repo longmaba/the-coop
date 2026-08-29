@@ -1,8 +1,14 @@
 import { Client, type Room } from '@colyseus/sdk';
 import type { JoinOptions, MoveTargetCommand, RestartCommand } from '../game/index.ts';
+import { HostedNetwork } from './hosted-network.ts';
+import {
+  clearSavedSeat,
+  savedSeat,
+  storeSavedSeat,
+} from './seat-storage.ts';
 import { EMPTY_SNAPSHOT, readSnapshot, type ClientStatus, type CoopSnapshot } from './state.ts';
 
-const SEAT_KEY = 'the-coop:seat';
+export { savedRoomId } from './seat-storage.ts';
 
 export const TRANSITION_MESSAGES = Object.freeze({
   replay: 'restartLevel',
@@ -10,11 +16,6 @@ export const TRANSITION_MESSAGES = Object.freeze({
   replayed: 'levelRestarted',
   advanced: 'levelAdvanced',
 });
-
-interface SavedSeat {
-  roomId: string;
-  reconnectionToken: string;
-}
 
 export interface ConnectionEvents {
   onSnapshot: (snapshot: CoopSnapshot) => void;
@@ -26,32 +27,18 @@ export interface ConnectionEvents {
   onAbandoned: () => void;
 }
 
-function clearSavedSeat(): void {
-  sessionStorage.removeItem(SEAT_KEY);
-}
-
-function storeSeat(room: Room): void {
-  sessionStorage.setItem(SEAT_KEY, JSON.stringify({
-    roomId: room.roomId,
-    reconnectionToken: room.reconnectionToken,
-  } satisfies SavedSeat));
-}
-
-function savedSeat(): SavedSeat | null {
-  try {
-    const value = sessionStorage.getItem(SEAT_KEY);
-    if (value === null) return null;
-    const parsed: unknown = JSON.parse(value);
-    if (parsed && typeof parsed === 'object') {
-      const candidate = parsed as Partial<SavedSeat>;
-      if (typeof candidate.roomId === 'string' && typeof candidate.reconnectionToken === 'string') return candidate as SavedSeat;
-    }
-  } catch { /* bad session data is disposable */ }
-  return null;
-}
-
-export function savedRoomId(): string | null {
-  return savedSeat()?.roomId ?? null;
+export interface NetworkTransport {
+  readonly roomId: string | null;
+  readonly playerId: string | null;
+  readonly snapshot: CoopSnapshot;
+  readonly seat: number | null;
+  create(): Promise<void>;
+  join(roomId: string, options?: JoinOptions): Promise<void>;
+  reconnectIfMatching(roomId: string): Promise<boolean>;
+  sendMove(command: MoveTargetCommand): void;
+  restart(command: RestartCommand): void;
+  advance(command: RestartCommand): void;
+  dispose(clearSeat?: boolean): void;
 }
 
 function errorText(error: unknown): string {
@@ -78,7 +65,7 @@ export function normalizeSeatPayload(payload: unknown): { playerId: string; seat
     : null;
 }
 
-export class CoopNetwork {
+class ColyseusNetwork implements NetworkTransport {
   #client = new Client(import.meta.env.VITE_GAME_SERVER_URL ?? 'http://127.0.0.1:2567');
   #room: Room | null = null;
   #events: ConnectionEvents;
@@ -112,7 +99,7 @@ export class CoopNetwork {
       await this.#connect(() => this.#client.reconnect(saved.reconnectionToken));
       return true;
     } catch {
-      sessionStorage.removeItem(SEAT_KEY);
+      clearSavedSeat();
       return false;
     }
   }
@@ -143,7 +130,7 @@ export class CoopNetwork {
       // after joining. Nine bounded exponential retries stay within 30 seconds.
       room.reconnection.minUptime = 0;
       room.reconnection.maxRetries = 9;
-      storeSeat(room);
+      storeSavedSeat(room.roomId, room.reconnectionToken);
       this.#wire(room);
       this.#events.onStatus('waiting');
     } catch (error) {
@@ -166,7 +153,9 @@ export class CoopNetwork {
     room.onReconnect(() => {
       // The SDK publishes onReconnect immediately before rotating its token.
       queueMicrotask(() => {
-        if (this.#room === room) storeSeat(room);
+        if (this.#room === room) {
+          storeSavedSeat(room.roomId, room.reconnectionToken);
+        }
       });
       this.#events.onStatus('waiting', 'Connection restored.');
     });
@@ -209,4 +198,35 @@ export class CoopNetwork {
       this.#events.onAbandoned();
     }));
   }
+}
+
+export function usesHostedTransport(mode: string): boolean {
+  return mode === 'sites';
+}
+
+export class CoopNetwork implements NetworkTransport {
+  readonly #transport: NetworkTransport;
+
+  constructor(events: ConnectionEvents, mode = import.meta.env.MODE) {
+    this.#transport = usesHostedTransport(mode)
+      ? new HostedNetwork(events)
+      : new ColyseusNetwork(events);
+  }
+
+  get roomId(): string | null { return this.#transport.roomId; }
+  get playerId(): string | null { return this.#transport.playerId; }
+  get snapshot(): CoopSnapshot { return this.#transport.snapshot; }
+  get seat(): number | null { return this.#transport.seat; }
+
+  create(): Promise<void> { return this.#transport.create(); }
+  join(roomId: string, options?: JoinOptions): Promise<void> {
+    return this.#transport.join(roomId, options);
+  }
+  reconnectIfMatching(roomId: string): Promise<boolean> {
+    return this.#transport.reconnectIfMatching(roomId);
+  }
+  sendMove(command: MoveTargetCommand): void { this.#transport.sendMove(command); }
+  restart(command: RestartCommand): void { this.#transport.restart(command); }
+  advance(command: RestartCommand): void { this.#transport.advance(command); }
+  dispose(clearSeat = false): void { this.#transport.dispose(clearSeat); }
 }

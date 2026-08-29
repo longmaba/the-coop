@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   normalizeSeatPayload,
   TRANSITION_MESSAGES,
+  usesHostedTransport,
 } from '../../../src/client/network.ts';
 
 describe('campaign transition protocol', () => {
@@ -37,5 +38,13 @@ describe('normalizeSeatPayload', () => {
     { playerId: 'player-1', seat: Number.NaN },
   ])('rejects malformed or out-of-range seat payloads: %j', (payload) => {
     expect(normalizeSeatPayload(payload)).toBeNull();
+  });
+});
+
+describe('transport selection', () => {
+  it('uses the Sites adapter only for the dedicated Sites build mode', () => {
+    expect(usesHostedTransport('sites')).toBe(true);
+    expect(usesHostedTransport('production')).toBe(false);
+    expect(usesHostedTransport('development')).toBe(false);
   });
 });

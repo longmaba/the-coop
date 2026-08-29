@@ -216,15 +216,18 @@ test('two isolated clients solve, reconnect, and restart the authoritative puzzl
     await expect(page.getByTestId('local-player')).toHaveText('Explorer 1');
     await expect(second.page.getByTestId('local-player')).toHaveText('Explorer 2');
 
-    // Exercise automatic SDK retry immediately after join (before its former
-    // five-second minimum uptime would have elapsed).
-    await page.evaluate(() => window.dispatchEvent(new Event('offline')));
-    await waitForState(second.page, 'early connection drop', (state) =>
-      state.phase === 'reconnectGrace' && state.players[0]?.connected === false);
-    await expect(page.getByTestId('reconnect-overlay')).toBeVisible();
-    await waitForState(second.page, 'automatic early reconnection', (state) =>
-      state.phase === 'playing' && state.players.every((player) => player.connected));
-    await expect(page.getByTestId('reconnect-overlay')).toBeHidden();
+    // The synthetic offline event exercises Colyseus SDK retry behavior. The
+    // Sites transport uses HTTP polling, while reload below covers its saved
+    // seat reconnection path.
+    if (!testInfo.project.name.endsWith('-sites')) {
+      await page.evaluate(() => window.dispatchEvent(new Event('offline')));
+      await waitForState(second.page, 'early connection drop', (state) =>
+        state.phase === 'reconnectGrace' && state.players[0]?.connected === false);
+      await expect(page.getByTestId('reconnect-overlay')).toBeVisible();
+      await waitForState(second.page, 'automatic early reconnection', (state) =>
+        state.phase === 'playing' && state.players.every((player) => player.connected));
+      await expect(page.getByTestId('reconnect-overlay')).toBeHidden();
+    }
 
     await verifyThirdSeatRejected(browser, id);
 
@@ -370,11 +373,13 @@ test('two isolated clients solve, reconnect, and restart the authoritative puzzl
       (window as Window & { __THE_COOP_E2E__?: Diagnostics }).__THE_COOP_E2E__?.sendMoveTarget(target), center(13, 8));
     await waitForState(page, 'second-round completion', (state) => state.phase === 'completed');
 
-    await second.page.evaluate(() => window.dispatchEvent(new Event('offline')));
-    await waitForState(page, 'completed-round reconnect grace', (state) =>
-      state.phase === 'reconnectGrace' && state.players[1]?.connected === false);
-    await waitForState(page, 'completed round restored after reconnect', (state) =>
-      state.phase === 'completed' && state.players.every((player) => player.connected));
+    if (!testInfo.project.name.endsWith('-sites')) {
+      await second.page.evaluate(() => window.dispatchEvent(new Event('offline')));
+      await waitForState(page, 'completed-round reconnect grace', (state) =>
+        state.phase === 'reconnectGrace' && state.players[1]?.connected === false);
+      await waitForState(page, 'completed round restored after reconnect', (state) =>
+        state.phase === 'completed' && state.players.every((player) => player.connected));
+    }
 
     const secondEpoch = await page.evaluate(() =>
       (window as Window & { __THE_COOP_E2E__?: Diagnostics }).__THE_COOP_E2E__?.state.levelEpoch ?? -1);
