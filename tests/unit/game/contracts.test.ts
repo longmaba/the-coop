@@ -58,20 +58,20 @@ describe('deterministic level inspection', () => {
       gridUnits: 'cells',
       worldUnits: 'pixels',
     });
-    expect(inspection.dimensions).toEqual({ width: 24, height: 12 });
+    expect(inspection.dimensions).toEqual({ width: 16, height: 16 });
     expect(inspection.gate).toMatchObject({
       id: 'gate_main',
       open: false,
       unlocked: false,
       occupiedCells: [
-        { grid: { x: 11, y: 5 }, world: { x: 552, y: 264 } },
-        { grid: { x: 11, y: 6 }, world: { x: 552, y: 312 } },
+        { grid: { x: 7, y: 7 }, world: { x: 360, y: 360 } },
+        { grid: { x: 7, y: 8 }, world: { x: 360, y: 408 } },
       ],
     });
     expect(inspection.interactables.map(({ id, grid, world }) => ({ id, grid, world }))).toEqual([
-      { id: 'plate_a', grid: { x: 8, y: 6 }, world: { x: 408, y: 312 } },
-      { id: 'plate_b', grid: { x: 14, y: 6 }, world: { x: 696, y: 312 } },
-      { id: 'exit_zone', grid: { x: 20, y: 6 }, world: { x: 984, y: 312 } },
+      { id: 'plate_a', grid: { x: 5, y: 8 }, world: { x: 264, y: 408 } },
+      { id: 'plate_b', grid: { x: 10, y: 8 }, world: { x: 504, y: 408 } },
+      { id: 'exit_zone', grid: { x: 13, y: 8 }, world: { x: 648, y: 408 } },
     ]);
     expect(createLevelInspection(false)).toEqual(inspection);
     expect(inspection.walls[0]?.grid).toEqual({ x: 0, y: 0 });
@@ -80,14 +80,14 @@ describe('deterministic level inspection', () => {
   it('resolves named and bounded grid targets', () => {
     expect(resolveInspectionTarget({ kind: 'interactable', id: 'plate_b' })).toEqual({
       interactableId: 'plate_b',
-      grid: { x: 14, y: 6 },
-      world: { x: 696, y: 312 },
+      grid: { x: 10, y: 8 },
+      world: { x: 504, y: 408 },
     });
     expect(resolveInspectionTarget({ kind: 'grid', x: 3, y: 5 })).toEqual({
       grid: { x: 3, y: 5 },
       world: { x: 168, y: 264 },
     });
-    expect(resolveInspectionTarget({ kind: 'grid', x: 24, y: 5 })).toBeNull();
+    expect(resolveInspectionTarget({ kind: 'grid', x: 16, y: 5 })).toBeNull();
     expect(resolveInspectionTarget({ kind: 'grid', x: 3.5, y: 5 })).toBeNull();
   });
 });

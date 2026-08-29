@@ -104,16 +104,16 @@ describe('campaign-aware MCP inspection', () => {
     ]);
     expect(inspection.interactables.find(({ id }) => id === 'teleporter_alpha_home')).toMatchObject({
       active: true,
-      grid: { x: 8, y: 5 },
-      world: { x: 408, y: 264 },
+      grid: { x: 5, y: 5 },
+      world: { x: 264, y: 264 },
     });
     expect(inspection.interactables.find(
       ({ id }) => id === 'teleporter_alpha_home',
     )).not.toHaveProperty('pairedWith');
     expect(inspection.interactables.find(({ id }) => id === 'teleporter_beta_annex')).toMatchObject({
       active: false,
-      grid: { x: 20, y: 9 },
-      world: { x: 984, y: 456 },
+      grid: { x: 13, y: 12 },
+      world: { x: 648, y: 600 },
     });
     expect(inspection.interactables.find(({ id }) => id === 'keycard_beta')).toMatchObject({
       collected: true,
@@ -142,7 +142,7 @@ describe('campaign-aware MCP inspection', () => {
     })).toBeNull();
     expect(resolveMcpMovementTarget(snapshot, {
       kind: 'grid',
-      x: 24,
+      x: 16,
       y: 6,
     })).toBeNull();
   });
@@ -155,9 +155,9 @@ describe('campaign-aware MCP inspection', () => {
     expect(inactive).toMatchObject({
       command: {
         interactableId: 'teleporter_alpha_home',
-        grid: { x: 8, y: 5 },
+        grid: { x: 5, y: 5 },
       },
-      validArrivals: [{ x: 8, y: 5 }, { x: 15, y: 5 }],
+      validArrivals: [{ x: 5, y: 5 }, { x: 10, y: 5 }],
     });
 
     const powered = resolveMcpMovementTarget(levelTwoSnapshot(true), {
@@ -167,9 +167,9 @@ describe('campaign-aware MCP inspection', () => {
     expect(powered).toMatchObject({
       command: {
         interactableId: 'teleporter_alpha_home',
-        grid: { x: 8, y: 5 },
+        grid: { x: 5, y: 5 },
       },
-      validArrivals: [{ x: 8, y: 5 }, { x: 15, y: 5 }],
+      validArrivals: [{ x: 5, y: 5 }, { x: 10, y: 5 }],
     });
   });
 
@@ -184,12 +184,12 @@ describe('campaign-aware MCP inspection', () => {
       kind: 'interactable',
       id: 'exit_zone',
     })).toMatchObject({
-      command: { grid: { x: 19, y: 4 } },
+      command: { grid: { x: 13, y: 8 } },
       validArrivals: [
-        { x: 19, y: 2 }, { x: 20, y: 2 }, { x: 21, y: 2 },
-        { x: 19, y: 3 }, { x: 20, y: 3 }, { x: 21, y: 3 },
-        { x: 19, y: 4 }, { x: 20, y: 4 }, { x: 21, y: 4 },
-        { x: 19, y: 5 }, { x: 20, y: 5 }, { x: 21, y: 5 },
+        { x: 12, y: 6 }, { x: 13, y: 6 }, { x: 14, y: 6 },
+        { x: 12, y: 7 }, { x: 13, y: 7 }, { x: 14, y: 7 },
+        { x: 12, y: 8 }, { x: 13, y: 8 }, { x: 14, y: 8 },
+        { x: 12, y: 9 }, { x: 13, y: 9 }, { x: 14, y: 9 },
       ],
     });
   });

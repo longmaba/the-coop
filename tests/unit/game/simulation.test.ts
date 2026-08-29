@@ -67,51 +67,51 @@ describe('authoritative fixed-step simulation', () => {
 
   it('uses a current-side threshold and never auto-resumes a closed-door route', () => {
     const state = createGameState(['one', 'two']);
-    const [routed, result] = applyMoveTarget(state, 'one', { seq: 1, worldX: point(14, 6).x, worldY: point(14, 6).y });
+    const [routed, result] = applyMoveTarget(state, 'one', { seq: 1, worldX: point(10, 8).x, worldY: point(10, 8).y });
     expect(result).toEqual({ accepted: true, routeKind: 'threshold-stop' });
     let progressed = routed;
     for (let i = 0; i < 80; i += 1) progressed = stepGame(progressed);
-    expect(progressed.players[0].position).toEqual(point(10, 6));
+    expect(progressed.players[0].position).toEqual(point(6, 8));
     expect(progressed.players[0].routeKind).toBe('none');
-    expect(progressed.players[0].position.x).toBeLessThan(point(11, 6).x);
+    expect(progressed.players[0].position.x).toBeLessThan(point(7, 8).x);
   });
 
   it('permits a crossing already entered while open after the plates release', () => {
     let state = createGameState(['one', 'two']);
-    state = place(state, 0, point(10, 6));
-    state = place(state, 1, point(8, 6));
+    state = place(state, 0, point(6, 8));
+    state = place(state, 1, point(5, 8));
     state = { ...state, doorOpen: true };
-    [state] = applyMoveTarget(state, 'one', { seq: 1, worldX: point(12, 6).x, worldY: point(12, 6).y });
+    [state] = applyMoveTarget(state, 'one', { seq: 1, worldX: point(8, 8).x, worldY: point(8, 8).y });
     for (let i = 0; i < 4; i += 1) state = stepGame(state);
     expect(state.players[0].crossingPermit).toBe(true);
-    state = place(state, 1, point(3, 7));
+    state = place(state, 1, point(3, 10));
     for (let i = 0; i < 8; i += 1) state = stepGame(state);
     expect(state.doorOpen).toBe(false);
-    expect(state.players[0].position.x).toBeGreaterThanOrEqual(12 * CELL_SIZE);
+    expect(state.players[0].position.x).toBeGreaterThanOrEqual(8 * CELL_SIZE);
     expect(state.players[0].crossingPermit).toBe(false);
   });
 
   it('turns a pre-entry route into a threshold stop when the door closes', () => {
     let state = createGameState(['one', 'two']);
-    state = place(state, 0, point(10, 6));
-    state = place(state, 1, point(8, 6));
+    state = place(state, 0, point(6, 8));
+    state = place(state, 1, point(5, 8));
     state = { ...state, doorOpen: true };
-    [state] = applyMoveTarget(state, 'one', { seq: 1, worldX: point(12, 6).x, worldY: point(12, 6).y });
+    [state] = applyMoveTarget(state, 'one', { seq: 1, worldX: point(8, 8).x, worldY: point(8, 8).y });
     state = stepGame(state);
-    state = place(state, 1, point(3, 7));
+    state = place(state, 1, point(3, 10));
     state = stepGame(state);
     expect(state.players[0].routeKind).toBe('threshold-stop');
     expect(state.players[0].crossingPermit).toBe(false);
     for (let i = 0; i < 10; i += 1) state = stepGame(state);
-    expect(state.players[0].position).toEqual(point(10, 6));
+    expect(state.players[0].position).toEqual(point(6, 8));
   });
 
   it('opens the door from either plate and lets players overlap', () => {
     let state = createGameState(['one', 'two']);
-    state = place(state, 0, point(8, 6));
+    state = place(state, 0, point(5, 8));
     state = stepGame(state);
     expect(state.doorOpen).toBe(true);
-    state = place(state, 0, point(14, 6));
+    state = place(state, 0, point(10, 8));
     state = stepGame(state);
     expect(state.doorOpen).toBe(true);
 
@@ -130,17 +130,17 @@ describe('authoritative fixed-step simulation', () => {
     expect(exactState.players[0].route.at(-1)).toEqual(exact);
     const [clamped] = applyMoveTarget(exactState, 'one', { seq: 2, worldX: 4 * CELL_SIZE + 1, worldY: 5 * CELL_SIZE + 1 });
     expect(clamped.players[0].route.at(-1)).toEqual({ x: 4 * CELL_SIZE + 14, y: 5 * CELL_SIZE + 14 });
-    const [, doorway] = applyMoveTarget(clamped, 'one', { seq: 3, worldX: point(11, 6).x, worldY: point(11, 6).y });
+    const [, doorway] = applyMoveTarget(clamped, 'one', { seq: 3, worldX: point(7, 8).x, worldY: point(7, 8).y });
     expect(doorway).toMatchObject({ accepted: false, reason: 'doorway-target' });
   });
 
   it('completes only when both player centers are in the exit on one tick', () => {
     let state = createGameState(['one', 'two']);
-    state = place(state, 0, point(20, 6));
+    state = place(state, 0, point(13, 8));
     state = stepGame(state);
     expect(state.phase).toBe('playing');
-    state = place(state, 0, point(20, 6), [point(21, 6)]);
-    state = place(state, 1, point(20, 5), [point(21, 5)]);
+    state = place(state, 0, point(13, 8), [point(14, 8)]);
+    state = place(state, 1, point(13, 7), [point(14, 7)]);
     state = stepGame(state);
     expect(state.phase).toBe('completed');
     expect(state.completedAtTick).toBe(2);
@@ -168,7 +168,7 @@ describe('authoritative fixed-step simulation', () => {
       levelId: 'level_1',
       levelEpoch: 1,
     });
-    expect(restarted.players[0].position).toEqual(point(3, 5));
+    expect(restarted.players[0].position).toEqual(point(3, 6));
     expect(restarted.players[0].lastMoveSeq).toBe(-1);
     expect(restarted.phase).toBe('playing');
     const [stale] = restartGame(restarted, { seq: 1 });
@@ -189,8 +189,8 @@ describe('authoritative fixed-step simulation', () => {
 
   it('preserves a completed round through reconnect grace without phantom connectivity', () => {
     let state = createGameState(['one', 'two']);
-    state = place(state, 0, point(20, 6));
-    state = place(state, 1, point(20, 5));
+    state = place(state, 0, point(13, 8));
+    state = place(state, 1, point(13, 7));
     state = stepGame(state);
     expect(state.phase).toBe('completed');
 
@@ -211,7 +211,7 @@ describe('authoritative fixed-step simulation', () => {
     const state = createGameState(['one', 'two']);
     const network = projectNetworkState(state);
     expect(network.players[0]).not.toHaveProperty('route');
-    expect(network.players[0]).toMatchObject({ id: 'one', worldX: point(3, 5).x });
+    expect(network.players[0]).toMatchObject({ id: 'one', worldX: point(3, 6).x });
     expect(LEVEL_ONE.exitCells).toHaveLength(12);
     expect(Object.isFrozen(LEVEL_ONE)).toBe(true);
     expect('add' in LEVEL_ONE.walls).toBe(false);

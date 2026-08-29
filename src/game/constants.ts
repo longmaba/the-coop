@@ -1,6 +1,6 @@
 /** Immutable tuning shared by the authoritative simulation and its consumers. */
-export const GRID_WIDTH = 24;
-export const GRID_HEIGHT = 12;
+export const GRID_WIDTH = 16;
+export const GRID_HEIGHT = 16;
 export const CELL_SIZE = 48;
 export const PLAYER_RADIUS = 14;
 export const PLAYER_SPEED = 180;
@@ -13,5 +13,5 @@ export const RECONNECT_GRACE_SECONDS = 30;
 export const COOPERATIVE_DISCOVERY_GOAL =
   'Explore the facility together and get both explorers into the exit.';
 
-export const DOOR_X = 11;
-export const DOOR_ROWS = [5, 6] as const;
+export const DOOR_X = 7;
+export const DOOR_ROWS = [7, 8] as const;

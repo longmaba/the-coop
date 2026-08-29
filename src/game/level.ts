@@ -125,10 +125,10 @@ const STANDARD_DOOR_CELLS = Object.freeze(
 );
 
 const STANDARD_EXIT_CELLS = Object.freeze([
-  frozenPoint(19, 4), frozenPoint(20, 4), frozenPoint(21, 4),
-  frozenPoint(19, 5), frozenPoint(20, 5), frozenPoint(21, 5),
-  frozenPoint(19, 6), frozenPoint(20, 6), frozenPoint(21, 6),
-  frozenPoint(19, 7), frozenPoint(20, 7), frozenPoint(21, 7),
+  frozenPoint(12, 6), frozenPoint(13, 6), frozenPoint(14, 6),
+  frozenPoint(12, 7), frozenPoint(13, 7), frozenPoint(14, 7),
+  frozenPoint(12, 8), frozenPoint(13, 8), frozenPoint(14, 8),
+  frozenPoint(12, 9), frozenPoint(13, 9), frozenPoint(14, 9),
 ]);
 
 function standardWalls(extras: readonly GridPoint[]): ReadonlySet<string> {
@@ -222,12 +222,12 @@ function createLevel(input: LevelInput): LevelDefinition {
     doorId: 'gate_main',
     doorCells: STANDARD_DOOR_CELLS,
     gateRule,
-    leftThreshold: frozenPoint(DOOR_X - 1, 6),
-    rightThreshold: frozenPoint(DOOR_X + 1, 6),
+    leftThreshold: frozenPoint(DOOR_X - 1, 8),
+    rightThreshold: frozenPoint(DOOR_X + 1, 8),
     leftRegionMaxX: DOOR_X - 1,
     rightRegionMinX: DOOR_X + 1,
     playerSpawns: Object.freeze(
-      (input.playerSpawns ?? [frozenPoint(3, 5), frozenPoint(3, 7)])
+      (input.playerSpawns ?? [frozenPoint(3, 6), frozenPoint(3, 10)])
         .map(freezePoint) as [GridPoint, GridPoint],
     ),
     pressurePlates: Object.freeze([...(input.pressurePlates ?? [])]),
@@ -242,8 +242,8 @@ function createLevel(input: LevelInput): LevelDefinition {
   });
 }
 
-const LEVEL_ONE_PLATE_A = frozenPoint(8, 6);
-const LEVEL_ONE_PLATE_B = frozenPoint(14, 6);
+const LEVEL_ONE_PLATE_A = frozenPoint(5, 8);
+const LEVEL_ONE_PLATE_B = frozenPoint(10, 8);
 
 export const LEVEL_ONE = createLevel({
   id: 'level_1',
@@ -251,14 +251,14 @@ export const LEVEL_ONE = createLevel({
   name: 'Pressure Lock',
   objective: 'Hold either pressure plate to open gate_main, then place both explorers in exit_zone.',
   extras: [
-    frozenPoint(5, 4), frozenPoint(5, 5), frozenPoint(5, 6),
-    frozenPoint(7, 7), frozenPoint(8, 7),
-    frozenPoint(15, 5), frozenPoint(15, 6), frozenPoint(16, 6),
-    frozenPoint(18, 4), frozenPoint(18, 7),
+    frozenPoint(3, 3), frozenPoint(4, 3), frozenPoint(3, 4),
+    frozenPoint(4, 12), frozenPoint(5, 12), frozenPoint(5, 11),
+    frozenPoint(9, 3), frozenPoint(10, 3), frozenPoint(10, 4),
+    frozenPoint(10, 12), frozenPoint(11, 12), frozenPoint(11, 11),
   ],
   pressurePlates: [
-    pressurePlate('plate_a', 8, 6),
-    pressurePlate('plate_b', 14, 6),
+    pressurePlate('plate_a', 5, 8),
+    pressurePlate('plate_b', 10, 8),
   ],
   gateRule: {
     kind: 'hold-any-plate',
@@ -275,30 +275,31 @@ export const LEVEL_TWO = createLevel({
   name: 'Powered Transit',
   objective: 'Hold Alpha power while your partner uses the teleporter and collects Card Alpha to unlock gate_main.',
   extras: [
-    frozenPoint(5, 4), frozenPoint(6, 4), frozenPoint(7, 4),
-    frozenPoint(16, 4), frozenPoint(17, 4),
-    frozenPoint(18, 6), frozenPoint(18, 7),
+    frozenPoint(3, 3), frozenPoint(4, 3), frozenPoint(5, 3),
+    frozenPoint(3, 12), frozenPoint(4, 12),
+    frozenPoint(9, 3), frozenPoint(10, 3), frozenPoint(10, 4),
+    frozenPoint(10, 12), frozenPoint(11, 12), frozenPoint(12, 12),
   ],
   teleporters: [
     teleporter(
       'teleporter_alpha',
       'teleporter_alpha_power',
-      frozenPoint(6, 7),
+      frozenPoint(4, 11),
       'teleporter_alpha_home',
-      frozenPoint(8, 5),
+      frozenPoint(5, 5),
       'teleporter_alpha_annex',
-      frozenPoint(15, 5),
+      frozenPoint(10, 5),
     ),
   ],
-  keycards: [keycard('keycard_alpha', 19, 3)],
+  keycards: [keycard('keycard_alpha', 13, 3)],
   gateRule: {
     kind: 'keycards-and-relays',
     requiredKeycardIds: ['keycard_alpha'],
     requiredRelayButtonIds: [],
     latch: true,
   },
-  nearPlate: frozenPoint(6, 7),
-  farPlate: frozenPoint(15, 5),
+  nearPlate: frozenPoint(4, 11),
+  farPlate: frozenPoint(10, 5),
 });
 
 export const LEVEL_THREE = createLevel({
@@ -307,26 +308,26 @@ export const LEVEL_THREE = createLevel({
   name: 'Security Handshake',
   objective: 'Retrieve Card Alpha, return through Alpha, then occupy both gate buttons to unlock gate_main.',
   extras: [
-    frozenPoint(5, 4), frozenPoint(6, 4),
-    frozenPoint(7, 6), frozenPoint(7, 7),
-    frozenPoint(15, 7), frozenPoint(16, 7),
-    frozenPoint(18, 5), frozenPoint(18, 6),
+    frozenPoint(3, 3), frozenPoint(4, 3),
+    frozenPoint(3, 9), frozenPoint(4, 9),
+    frozenPoint(9, 3), frozenPoint(10, 3),
+    frozenPoint(10, 11), frozenPoint(11, 11),
   ],
   teleporters: [
     teleporter(
       'teleporter_alpha',
       'teleporter_alpha_power',
-      frozenPoint(5, 8),
+      frozenPoint(4, 12),
       'teleporter_alpha_home',
-      frozenPoint(8, 5),
+      frozenPoint(5, 5),
       'teleporter_alpha_annex',
-      frozenPoint(15, 5),
+      frozenPoint(10, 5),
     ),
   ],
-  keycards: [keycard('keycard_alpha', 19, 3)],
+  keycards: [keycard('keycard_alpha', 13, 3)],
   relayButtons: [
-    relay('gate_button_a', 8, 3),
-    relay('gate_button_b', 8, 9),
+    relay('gate_button_a', 5, 3),
+    relay('gate_button_b', 5, 12),
   ],
   gateRule: {
     kind: 'keycards-and-relays',
@@ -334,16 +335,9 @@ export const LEVEL_THREE = createLevel({
     requiredRelayButtonIds: ['gate_button_a', 'gate_button_b'],
     latch: true,
   },
-  nearPlate: frozenPoint(8, 3),
-  farPlate: frozenPoint(8, 9),
+  nearPlate: frozenPoint(5, 3),
+  farPlate: frozenPoint(5, 12),
 });
-
-const LEVEL_FOUR_EXIT_CELLS = Object.freeze([
-  frozenPoint(19, 2), frozenPoint(20, 2), frozenPoint(21, 2),
-  frozenPoint(19, 3), frozenPoint(20, 3), frozenPoint(21, 3),
-  frozenPoint(19, 4), frozenPoint(20, 4), frozenPoint(21, 4),
-  frozenPoint(19, 5), frozenPoint(20, 5), frozenPoint(21, 5),
-]);
 
 export const LEVEL_FOUR = createLevel({
   id: 'level_4',
@@ -351,39 +345,38 @@ export const LEVEL_FOUR = createLevel({
   name: 'Crossed Circuits',
   objective: 'Chain Alpha and Beta to collect both cards, reunite, and occupy both gate buttons.',
   extras: [
-    frozenPoint(6, 4), frozenPoint(7, 4),
-    frozenPoint(15, 7),
-    frozenPoint(18, 7), frozenPoint(19, 7), frozenPoint(20, 7),
-    frozenPoint(21, 7), frozenPoint(22, 7),
-    frozenPoint(18, 8), frozenPoint(18, 9), frozenPoint(18, 10),
+    frozenPoint(3, 3), frozenPoint(4, 3),
+    frozenPoint(3, 13), frozenPoint(4, 13),
+    frozenPoint(9, 3), frozenPoint(10, 3),
+    frozenPoint(11, 13), frozenPoint(12, 13),
   ],
   teleporters: [
     teleporter(
       'teleporter_alpha',
       'teleporter_alpha_power',
-      frozenPoint(5, 7),
+      frozenPoint(4, 11),
       'teleporter_alpha_home',
-      frozenPoint(8, 5),
+      frozenPoint(5, 5),
       'teleporter_alpha_annex',
-      frozenPoint(14, 5),
+      frozenPoint(10, 5),
     ),
     teleporter(
       'teleporter_beta',
       'teleporter_beta_power',
-      frozenPoint(16, 8),
+      frozenPoint(12, 11),
       'teleporter_beta_home',
-      frozenPoint(8, 8),
+      frozenPoint(5, 11),
       'teleporter_beta_annex',
-      frozenPoint(20, 9),
+      frozenPoint(13, 12),
     ),
   ],
   keycards: [
-    keycard('keycard_alpha', 16, 3),
-    keycard('keycard_beta', 21, 9),
+    keycard('keycard_alpha', 12, 3),
+    keycard('keycard_beta', 14, 13),
   ],
   relayButtons: [
-    relay('gate_button_a', 8, 3),
-    relay('gate_button_b', 8, 9),
+    relay('gate_button_a', 5, 3),
+    relay('gate_button_b', 5, 13),
   ],
   gateRule: {
     kind: 'keycards-and-relays',
@@ -391,9 +384,8 @@ export const LEVEL_FOUR = createLevel({
     requiredRelayButtonIds: ['gate_button_a', 'gate_button_b'],
     latch: true,
   },
-  exitCells: LEVEL_FOUR_EXIT_CELLS,
-  nearPlate: frozenPoint(8, 3),
-  farPlate: frozenPoint(8, 9),
+  nearPlate: frozenPoint(5, 3),
+  farPlate: frozenPoint(5, 13),
 });
 
 export const LEVEL_CATALOG = Object.freeze([
@@ -425,9 +417,19 @@ export function levelInteractablePoint(
   id: InteractableId,
 ): GridPoint | null {
   if (id === 'exit_zone') {
-    return level.exitCells.find((cell) => cell.x === 20 && cell.y === 6)
-      ?? level.exitCells[Math.floor(level.exitCells.length / 2)]
-      ?? null;
+    if (level.exitCells.length === 0) return null;
+    const center = level.exitCells.reduce(
+      (sum, cell) => ({ x: sum.x + cell.x, y: sum.y + cell.y }),
+      { x: 0, y: 0 },
+    );
+    const centerX = Math.round(center.x / level.exitCells.length);
+    const centerY = Math.round(center.y / level.exitCells.length);
+    return level.exitCells.find((cell) => cell.x === centerX && cell.y === centerY)
+      ?? level.exitCells.reduce((nearest, cell) => {
+        const nearestDistance = (nearest.x - centerX) ** 2 + (nearest.y - centerY) ** 2;
+        const cellDistance = (cell.x - centerX) ** 2 + (cell.y - centerY) ** 2;
+        return cellDistance < nearestDistance ? cell : nearest;
+      });
   }
   const pressure = level.pressurePlates.find((entry) => entry.id === id);
   if (pressure !== undefined) return pressure.grid;

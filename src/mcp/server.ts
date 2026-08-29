@@ -3,6 +3,8 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import {
+  GRID_HEIGHT,
+  GRID_WIDTH,
   LEVEL_CATALOG,
   getLevelDefinition,
   resolveInspectionTarget,
@@ -60,8 +62,8 @@ const targetSchema = z.discriminatedUnion('kind', [
   }).strict(),
   z.object({
     kind: z.literal('grid'),
-    x: z.number().int().min(0).max(23),
-    y: z.number().int().min(0).max(11),
+    x: z.number().int().min(0).max(GRID_WIDTH - 1),
+    y: z.number().int().min(0).max(GRID_HEIGHT - 1),
   }).strict(),
 ]);
 

@@ -20,6 +20,11 @@ Open `http://127.0.0.1:5173` in one browser profile, select **Create Room**, the
 
 Movement is pointer-only: click a reachable destination and the authoritative server computes the route. A click beyond a closed door stops the explorer at the threshold; after a partner opens the door, click the destination again.
 
+The development launcher watches both client and authoritative game/server
+dependencies. A game or server source edit restarts the authoritative process
+so rendered walls and server pathfinding stay on the same level definition;
+active rooms reset after that restart and should be rejoined.
+
 ## Play with a Codex teammate by voice
 
 The repository also includes a project-scoped, local stdio MCP server that
@@ -89,7 +94,8 @@ Players can pass through each other. If a connection drops during play, the room
 - `src/game`: deterministic level catalog, hidden-grid A*, fixed-step movement, portals, cards, gates, and exits
 - `src/server`: private two-seat Colyseus room and schema projection
 - `src/mcp`: local Player 2 Colyseus client and stdio MCP tools
-- `src/client`: Phaser scene, lobby, networking, HUD, procedural visuals, and audio cues
+- `src/client`: Three.js facility renderer, lobby, networking, HUD, imported low-poly visuals, and audio cues
+- `assets`: user-supplied modular facility and animal GLBs; the production client imports only the selected runtime set
 - `tests/unit`: pathfinding, simulation, client state, and protocol-boundary tests
 - `tests/integration`: real Colyseus SDK room lifecycle
 - `tests/e2e`: browser/browser and browser/MCP clients solving, progressing, reconnecting, rejecting a third seat, replaying, and wrapping the campaign
@@ -97,6 +103,9 @@ Players can pass through each other. If a connection drops during play, the room
 The server owns movement, phase changes, collision rules, mechanisms,
 completion, replay, and advancement. Clients send sequenced target requests and
 render schema snapshots without local gameplay prediction.
+
+The repository does not include separate license metadata for the supplied
+asset pack. Confirm its redistribution terms before publishing a public build.
 
 ## Verify
 

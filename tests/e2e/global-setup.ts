@@ -3,8 +3,20 @@ import { resolve } from 'node:path';
 import { createServer as createViteServer } from 'vite';
 import { startGameServer } from '../../src/server/index.ts';
 
-const CLIENT_URL = 'http://127.0.0.1:5173';
-const GAME_SERVER_URL = 'http://127.0.0.1:2567';
+function portFromEnvironment(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined) return fallback;
+  const port = Number(raw);
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+    throw new Error(`${name} must be an integer port between 1 and 65535.`);
+  }
+  return port;
+}
+
+const CLIENT_PORT = portFromEnvironment('THE_COOP_E2E_CLIENT_PORT', 5173);
+const GAME_SERVER_PORT = portFromEnvironment('THE_COOP_E2E_GAME_SERVER_PORT', 2567);
+const CLIENT_URL = `http://127.0.0.1:${CLIENT_PORT}`;
+const GAME_SERVER_URL = `http://127.0.0.1:${GAME_SERVER_PORT}`;
 
 async function verifyReusableEndpoint(
   name: string,
@@ -57,15 +69,18 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     return reuseRunningServers();
   }
 
+  process.env.VITE_GAME_SERVER_URL = GAME_SERVER_URL;
+  process.env.THE_COOP_GAME_SERVER_URL = GAME_SERVER_URL;
+  process.env.THE_COOP_HUMAN_ORIGIN = CLIENT_URL;
   const root = fileURLToPath(new URL('../..', import.meta.url));
-  const gameServer = await startGameServer(2567, '127.0.0.1');
+  const gameServer = await startGameServer(GAME_SERVER_PORT, '127.0.0.1');
   const viteServer = await createViteServer({
     root,
     configFile: resolve(root, 'vite.config.ts'),
     logLevel: 'error',
     server: {
       host: '127.0.0.1',
-      port: 5173,
+      port: CLIENT_PORT,
       strictPort: true,
     },
   });

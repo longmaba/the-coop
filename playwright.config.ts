@@ -1,5 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const clientPort = process.env.THE_COOP_E2E_CLIENT_PORT ?? "5173";
+
 export default defineConfig({
   testDir: "./tests/e2e",
   globalSetup: "./tests/e2e/global-setup.ts",
@@ -11,7 +13,7 @@ export default defineConfig({
   },
   reporter: [["list"], ["html", { open: "never" }]],
   use: {
-    baseURL: "http://127.0.0.1:5173",
+    baseURL: `http://127.0.0.1:${clientPort}`,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "retain-on-failure"

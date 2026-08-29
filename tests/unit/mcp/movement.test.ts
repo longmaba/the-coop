@@ -22,7 +22,7 @@ const snapshot = (
     connected: true,
     lastMoveSeq: -1,
     routeKind: 'none',
-    grid: { x: 3, y: 7 },
+    grid: { x: 3, y: 10 },
     ...overrides,
   },
 });
@@ -30,28 +30,28 @@ const snapshot = (
 describe('PlayerTwoMovementCoordinator', () => {
   it('derives and rebases movement sequences from authoritative Player 2 state', async () => {
     const coordinator = new PlayerTwoMovementCoordinator(new FakeTimer());
-    const first = coordinator.begin(snapshot({ lastMoveSeq: 4 }), { x: 8, y: 6 }, 'accepted');
+    const first = coordinator.begin(snapshot({ lastMoveSeq: 4 }), { x: 5, y: 8 }, 'accepted');
     expect(first.seq).toBe(5);
     coordinator.handleMoveResult({
-      seq: 5, accepted: true, routeKind: 'target', effectiveTarget: { x: 8, y: 6 },
+      seq: 5, accepted: true, routeKind: 'target', effectiveTarget: { x: 5, y: 8 },
     });
     await expect(first.outcome).resolves.toMatchObject({ status: 'accepted', seq: 5 });
 
-    const rebased = coordinator.begin(snapshot({ lastMoveSeq: -1 }, 1), { x: 8, y: 6 }, 'accepted');
+    const rebased = coordinator.begin(snapshot({ lastMoveSeq: -1 }, 1), { x: 5, y: 8 }, 'accepted');
     expect(rebased.seq).toBe(0);
   });
 
   it('waits for accepted authoritative idle arrival', async () => {
     const coordinator = new PlayerTwoMovementCoordinator(new FakeTimer());
-    const move = coordinator.begin(snapshot(), { x: 8, y: 6 });
+    const move = coordinator.begin(snapshot(), { x: 5, y: 8 });
     coordinator.handleMoveResult({
-      seq: move.seq, accepted: true, routeKind: 'target', effectiveTarget: { x: 8, y: 6 },
+      seq: move.seq, accepted: true, routeKind: 'target', effectiveTarget: { x: 5, y: 8 },
     });
-    coordinator.observe(snapshot({ lastMoveSeq: move.seq, routeKind: 'target', grid: { x: 8, y: 6 } }));
-    coordinator.observe(snapshot({ lastMoveSeq: move.seq, routeKind: 'none', grid: { x: 8, y: 6 } }));
+    coordinator.observe(snapshot({ lastMoveSeq: move.seq, routeKind: 'target', grid: { x: 5, y: 8 } }));
+    coordinator.observe(snapshot({ lastMoveSeq: move.seq, routeKind: 'none', grid: { x: 5, y: 8 } }));
     await expect(move.outcome).resolves.toMatchObject({
       status: 'arrived',
-      currentPosition: { x: 8, y: 6 },
+      currentPosition: { x: 5, y: 8 },
     });
   });
 
@@ -59,27 +59,27 @@ describe('PlayerTwoMovementCoordinator', () => {
     const coordinator = new PlayerTwoMovementCoordinator(new FakeTimer());
     const move = coordinator.begin(
       snapshot(),
-      { x: 8, y: 5 },
+      { x: 5, y: 5 },
       'arrived',
-      [{ x: 8, y: 5 }, { x: 15, y: 5 }],
+      [{ x: 5, y: 5 }, { x: 10, y: 5 }],
     );
     coordinator.handleMoveResult({
       seq: move.seq,
       accepted: true,
       routeKind: 'target',
-      effectiveTarget: { x: 8, y: 5 },
+      effectiveTarget: { x: 5, y: 5 },
     });
 
     coordinator.observe(snapshot({
       lastMoveSeq: move.seq,
       routeKind: 'none',
-      grid: { x: 8, y: 5 },
+      grid: { x: 5, y: 5 },
     }));
     await expect(move.outcome).resolves.toMatchObject({
       status: 'arrived',
-      target: { x: 8, y: 5 },
-      effectiveTarget: { x: 8, y: 5 },
-      currentPosition: { x: 8, y: 5 },
+      target: { x: 5, y: 5 },
+      effectiveTarget: { x: 5, y: 5 },
+      currentPosition: { x: 5, y: 5 },
     });
   });
 
@@ -87,52 +87,52 @@ describe('PlayerTwoMovementCoordinator', () => {
     const coordinator = new PlayerTwoMovementCoordinator(new FakeTimer());
     const move = coordinator.begin(
       snapshot(),
-      { x: 8, y: 5 },
+      { x: 5, y: 5 },
       'arrived',
-      [{ x: 8, y: 5 }, { x: 15, y: 5 }],
+      [{ x: 5, y: 5 }, { x: 10, y: 5 }],
     );
     coordinator.handleMoveResult({
       seq: move.seq,
       accepted: true,
       routeKind: 'target',
-      effectiveTarget: { x: 8, y: 5 },
+      effectiveTarget: { x: 5, y: 5 },
     });
     coordinator.observe(snapshot({
       lastMoveSeq: move.seq,
       routeKind: 'none',
-      grid: { x: 15, y: 5 },
+      grid: { x: 10, y: 5 },
     }));
     await expect(move.outcome).resolves.toMatchObject({
       status: 'arrived',
-      target: { x: 8, y: 5 },
-      effectiveTarget: { x: 15, y: 5 },
-      currentPosition: { x: 15, y: 5 },
+      target: { x: 5, y: 5 },
+      effectiveTarget: { x: 10, y: 5 },
+      currentPosition: { x: 10, y: 5 },
     });
   });
 
   it('settles at the requested pad when an accepted command starts there', async () => {
     const coordinator = new PlayerTwoMovementCoordinator(new FakeTimer());
     const move = coordinator.begin(
-      snapshot({ lastMoveSeq: 7, grid: { x: 8, y: 5 } }),
-      { x: 8, y: 5 },
+      snapshot({ lastMoveSeq: 7, grid: { x: 5, y: 5 } }),
+      { x: 5, y: 5 },
       'arrived',
-      [{ x: 8, y: 5 }, { x: 15, y: 5 }],
+      [{ x: 5, y: 5 }, { x: 10, y: 5 }],
     );
     coordinator.handleMoveResult({
       seq: move.seq,
       accepted: true,
       routeKind: 'none',
-      effectiveTarget: { x: 8, y: 5 },
+      effectiveTarget: { x: 5, y: 5 },
     });
     coordinator.observe(snapshot({
       lastMoveSeq: move.seq,
       routeKind: 'none',
-      grid: { x: 8, y: 5 },
+      grid: { x: 5, y: 5 },
     }));
     await expect(move.outcome).resolves.toMatchObject({
       status: 'arrived',
-      effectiveTarget: { x: 8, y: 5 },
-      currentPosition: { x: 8, y: 5 },
+      effectiveTarget: { x: 5, y: 5 },
+      currentPosition: { x: 5, y: 5 },
     });
   });
 
@@ -140,29 +140,29 @@ describe('PlayerTwoMovementCoordinator', () => {
     const coordinator = new PlayerTwoMovementCoordinator(new FakeTimer());
     const move = coordinator.begin(
       snapshot(),
-      { x: 20, y: 6 },
+      { x: 13, y: 8 },
       'arrived',
-      [{ x: 19, y: 4 }, { x: 20, y: 6 }, { x: 21, y: 7 }],
+      [{ x: 12, y: 6 }, { x: 13, y: 8 }, { x: 14, y: 9 }],
     );
     coordinator.handleMoveResult({
       seq: move.seq,
       accepted: true,
       routeKind: 'target',
-      effectiveTarget: { x: 20, y: 6 },
+      effectiveTarget: { x: 13, y: 8 },
     });
     coordinator.observe({
       ...snapshot({
         lastMoveSeq: move.seq,
         routeKind: 'target',
-        grid: { x: 19, y: 4 },
+        grid: { x: 12, y: 6 },
       }),
       phase: 'completed',
     });
     await expect(move.outcome).resolves.toMatchObject({
       status: 'arrived',
-      target: { x: 20, y: 6 },
-      effectiveTarget: { x: 19, y: 4 },
-      currentPosition: { x: 19, y: 4 },
+      target: { x: 13, y: 8 },
+      effectiveTarget: { x: 12, y: 6 },
+      currentPosition: { x: 12, y: 6 },
     });
   });
 
@@ -170,15 +170,15 @@ describe('PlayerTwoMovementCoordinator', () => {
     const coordinator = new PlayerTwoMovementCoordinator(new FakeTimer());
     const move = coordinator.begin(
       snapshot(),
-      { x: 8, y: 6 },
+      { x: 5, y: 8 },
       'arrived',
-      [{ x: 8, y: 6 }],
+      [{ x: 5, y: 8 }],
     );
     coordinator.handleMoveResult({
       seq: move.seq,
       accepted: true,
       routeKind: 'target',
-      effectiveTarget: { x: 8, y: 6 },
+      effectiveTarget: { x: 5, y: 8 },
     });
 
     let settled = false;
@@ -186,7 +186,7 @@ describe('PlayerTwoMovementCoordinator', () => {
     coordinator.observe(snapshot({
       lastMoveSeq: move.seq - 1,
       routeKind: 'none',
-      grid: { x: 8, y: 6 },
+      grid: { x: 5, y: 8 },
     }));
     await Promise.resolve();
     expect(settled).toBe(false);
@@ -194,28 +194,28 @@ describe('PlayerTwoMovementCoordinator', () => {
     coordinator.observe(snapshot({
       lastMoveSeq: move.seq,
       routeKind: 'none',
-      grid: { x: 8, y: 6 },
+      grid: { x: 5, y: 8 },
     }));
     await expect(move.outcome).resolves.toMatchObject({ status: 'arrived' });
   });
 
   it('reports threshold stops at the authoritative effective destination', async () => {
     const coordinator = new PlayerTwoMovementCoordinator(new FakeTimer());
-    const move = coordinator.begin(snapshot(), { x: 14, y: 6 });
+    const move = coordinator.begin(snapshot(), { x: 10, y: 8 });
     coordinator.handleMoveResult({
       seq: move.seq,
       accepted: true,
       routeKind: 'threshold-stop',
-      effectiveTarget: { x: 10, y: 6 },
+      effectiveTarget: { x: 6, y: 8 },
     });
     coordinator.observe(snapshot({
       lastMoveSeq: move.seq,
       routeKind: 'none',
-      grid: { x: 10, y: 6 },
+      grid: { x: 6, y: 8 },
     }));
     await expect(move.outcome).resolves.toMatchObject({
       status: 'threshold_stopped',
-      effectiveTarget: { x: 10, y: 6 },
+      effectiveTarget: { x: 6, y: 8 },
     });
   });
 
@@ -223,33 +223,33 @@ describe('PlayerTwoMovementCoordinator', () => {
     const coordinator = new PlayerTwoMovementCoordinator(new FakeTimer());
     const move = coordinator.begin(
       snapshot(),
-      { x: 15, y: 5 },
+      { x: 10, y: 5 },
       'arrived',
-      [{ x: 15, y: 5 }, { x: 8, y: 5 }],
+      [{ x: 10, y: 5 }, { x: 5, y: 5 }],
     );
     coordinator.handleMoveResult({
       seq: move.seq,
       accepted: true,
       routeKind: 'threshold-stop',
-      effectiveTarget: { x: 10, y: 6 },
+      effectiveTarget: { x: 6, y: 8 },
     });
     coordinator.observe(snapshot({
       lastMoveSeq: move.seq,
       routeKind: 'none',
-      grid: { x: 10, y: 6 },
+      grid: { x: 6, y: 8 },
     }));
     await expect(move.outcome).resolves.toMatchObject({
       status: 'threshold_stopped',
-      effectiveTarget: { x: 10, y: 6 },
-      currentPosition: { x: 10, y: 6 },
+      effectiveTarget: { x: 6, y: 8 },
+      currentPosition: { x: 6, y: 8 },
     });
   });
 
   it('supersedes older waits and settles timeout and unavailable outcomes', async () => {
     const timer = new FakeTimer();
     const coordinator = new PlayerTwoMovementCoordinator(timer);
-    const older = coordinator.begin(snapshot(), { x: 8, y: 6 });
-    const newer = coordinator.begin(snapshot(), { x: 9, y: 6 });
+    const older = coordinator.begin(snapshot(), { x: 5, y: 8 });
+    const newer = coordinator.begin(snapshot(), { x: 6, y: 8 });
     await expect(older.outcome).resolves.toMatchObject({ status: 'superseded' });
     timer.fire();
     await expect(newer.outcome).resolves.toMatchObject({ status: 'timed_out' });
@@ -258,7 +258,7 @@ describe('PlayerTwoMovementCoordinator', () => {
       levelEpoch: 0,
       phase: 'reconnectGrace',
       playerTwo: { ...snapshot().playerTwo!, connected: false },
-    }, { x: 8, y: 6 });
+    }, { x: 5, y: 8 });
     await expect(unavailable.outcome).resolves.toMatchObject({ status: 'unavailable' });
   });
 
@@ -266,15 +266,15 @@ describe('PlayerTwoMovementCoordinator', () => {
     const coordinator = new PlayerTwoMovementCoordinator(new FakeTimer());
     const pending = coordinator.begin(
       snapshot({ lastMoveSeq: 6 }, 2),
-      { x: 8, y: 6 },
+      { x: 5, y: 8 },
       'arrived',
-      [{ x: 8, y: 6 }],
+      [{ x: 5, y: 8 }],
     );
     coordinator.handleMoveResult({
       seq: pending.seq,
       accepted: true,
       routeKind: 'target',
-      effectiveTarget: { x: 8, y: 6 },
+      effectiveTarget: { x: 5, y: 8 },
     });
 
     coordinator.observe(snapshot({ lastMoveSeq: 3 }, 3));
@@ -285,7 +285,7 @@ describe('PlayerTwoMovementCoordinator', () => {
 
     const rebased = coordinator.begin(
       snapshot({ lastMoveSeq: 3 }, 3),
-      { x: 8, y: 6 },
+      { x: 5, y: 8 },
       'accepted',
     );
     expect(rebased.seq).toBe(4);
@@ -310,7 +310,7 @@ describe('PlayerTwoMovementCoordinator', () => {
 
   it('settles an active wait as unavailable when Player 2 disconnects', async () => {
     const coordinator = new PlayerTwoMovementCoordinator(new FakeTimer());
-    const move = coordinator.begin(snapshot(), { x: 8, y: 6 });
+    const move = coordinator.begin(snapshot(), { x: 5, y: 8 });
     coordinator.observe({
       levelEpoch: 0,
       phase: 'abandoned',

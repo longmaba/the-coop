@@ -2,6 +2,7 @@ import { expect, test, type Browser, type Page, type TestInfo } from '@playwrigh
 
 interface BridgeState {
   phase: string;
+  tick: number;
   doorOpen: boolean;
   nearPlatePressed: boolean;
   farPlatePressed: boolean;
@@ -20,6 +21,18 @@ interface Diagnostics {
   state: BridgeState;
   roomId: string | null;
   playerId: string | null;
+  assetReady: boolean;
+  renderer: {
+    ready: boolean;
+    cameraElevation: number;
+    cameraAzimuth: number;
+    canvasCount: number;
+    gateAnimations: Array<{
+      time: number;
+      duration: number;
+      travel: number;
+    }>;
+  } | null;
   worldToScreen(point: { x: number; y: number }): { x: number; y: number };
   sendMoveTarget(point: { x: number; y: number }): void;
 }
@@ -98,6 +111,80 @@ async function captureFacility(page: Page, testInfo: TestInfo): Promise<void> {
   });
 }
 
+async function captureCompactFacility(page: Page, testInfo: TestInfo): Promise<void> {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByTestId('game-shell')).toBeVisible();
+  const framing = await page.evaluate(() => {
+    const canvas = document.querySelector<HTMLCanvasElement>('#facility-root canvas');
+    if (canvas === null) return null;
+    const bounds = canvas.getBoundingClientRect();
+    const diagnostics = (window as Window & { __THE_COOP_E2E__?: Diagnostics }).__THE_COOP_E2E__;
+    const boardCorners = [
+      { x: 0, y: 0 },
+      { x: 16 * 48, y: 0 },
+      { x: 0, y: 16 * 48 },
+      { x: 16 * 48, y: 16 * 48 },
+    ].map((point) => diagnostics?.worldToScreen(point));
+    return {
+      viewportWidth: window.innerWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+      canvas: {
+        left: bounds.left,
+        right: bounds.right,
+        top: bounds.top,
+        bottom: bounds.bottom,
+      },
+      boardCorners,
+    };
+  });
+  expect(framing).not.toBeNull();
+  expect(framing!.scrollWidth).toBeLessThanOrEqual(framing!.viewportWidth);
+  expect(framing!.canvas.left).toBeGreaterThanOrEqual(0);
+  expect(framing!.canvas.right).toBeLessThanOrEqual(framing!.viewportWidth);
+  for (const corner of framing!.boardCorners) {
+    expect(corner).toBeDefined();
+    expect(corner!.x).toBeGreaterThanOrEqual(framing!.canvas.left);
+    expect(corner!.x).toBeLessThanOrEqual(framing!.canvas.right);
+    expect(corner!.y).toBeGreaterThanOrEqual(framing!.canvas.top);
+    expect(corner!.y).toBeLessThanOrEqual(framing!.canvas.bottom);
+  }
+  await page.screenshot({
+    path: testInfo.outputPath('facility-compact.png'),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 1280, height: 720 });
+}
+
+async function captureGate(
+  page: Page,
+  testInfo: TestInfo,
+  state: 'closed' | 'transition' | 'open',
+): Promise<void> {
+  const clip = await page.evaluate(() => {
+    const diagnostics = (window as Window & { __THE_COOP_E2E__?: Diagnostics }).__THE_COOP_E2E__;
+    const canvas = document.querySelector<HTMLCanvasElement>('#facility-root canvas');
+    if (diagnostics === undefined || canvas === null) return null;
+    const center = diagnostics.worldToScreen({
+      x: 7.5 * 48,
+      y: 8 * 48,
+    });
+    const bounds = canvas.getBoundingClientRect();
+    const left = Math.max(bounds.left, center.x - 120);
+    const top = Math.max(bounds.top, center.y - 170);
+    return {
+      x: left,
+      y: top,
+      width: Math.min(240, bounds.right - left),
+      height: Math.min(230, bounds.bottom - top),
+    };
+  });
+  if (clip === null) throw new Error('Could not locate the rendered gate.');
+  await page.screenshot({
+    path: testInfo.outputPath(`gate-${state}.png`),
+    clip,
+  });
+}
+
 test('two isolated clients solve, reconnect, and restart the authoritative puzzle', async ({ browser, page }, testInfo) => {
   test.setTimeout(60_000);
   const errors: string[] = [];
@@ -107,6 +194,18 @@ test('two isolated clients solve, reconnect, and restart the authoritative puzzl
   await expect(page.getByRole('heading', { name: 'THE COOP' })).toBeVisible();
   await page.getByTestId('create-room').click();
   await expect(page.getByTestId('game-shell')).toBeVisible();
+  await page.waitForFunction(() =>
+    (window as Window & { __THE_COOP_E2E__?: Diagnostics }).__THE_COOP_E2E__?.assetReady === true);
+  await expect(page.getByTestId('asset-loading-overlay')).toBeHidden();
+  await expect(page.locator('#facility-root canvas')).toBeVisible();
+  const renderer = await page.evaluate(() =>
+    (window as Window & { __THE_COOP_E2E__?: Diagnostics }).__THE_COOP_E2E__?.renderer);
+  expect(renderer).toMatchObject({
+    ready: true,
+    cameraAzimuth: 45,
+    canvasCount: 1,
+  });
+  expect(renderer?.cameraElevation).toBeCloseTo(35.264, 3);
   const id = await roomId(page);
   await expect(page.getByTestId('hud-room-code')).toHaveText(id);
 
@@ -140,37 +239,106 @@ test('two isolated clients solve, reconnect, and restart the authoritative puzzl
     originalPlayerId);
     expect(await page.evaluate(() =>
       (window as Window & { __THE_COOP_E2E__?: Diagnostics }).__THE_COOP_E2E__?.playerId)).toBe(originalPlayerId);
+    await page.waitForFunction(() => {
+      const gates = (window as Window & { __THE_COOP_E2E__?: Diagnostics })
+        .__THE_COOP_E2E__?.renderer?.gateAnimations;
+      return gates !== undefined
+        && gates.length > 0
+        && gates.every(({ time, travel }) => time === 0 && travel < 0.001);
+    });
+    if (testInfo.project.name === 'chrome') {
+      await captureGate(page, testInfo, 'closed');
+    }
+
+    // The top-right internal wall at 10,3 is present in both the visual plan
+    // and authoritative catalog. A projected click on it must not create a
+    // route or advance the accepted server command sequence.
+    const beforeWallClick = await page.evaluate(() => {
+      const state = (window as Window & { __THE_COOP_E2E__?: Diagnostics }).__THE_COOP_E2E__!.state;
+      return {
+        tick: state.tick,
+        worldX: state.players[0]!.worldX,
+        worldY: state.players[0]!.worldY,
+        lastMoveSeq: state.players[0]!.lastMoveSeq,
+      };
+    });
+    await clickWorld(page, center(10, 3));
+    await page.waitForFunction((minimumTick) =>
+      (window as Window & { __THE_COOP_E2E__?: Diagnostics })
+        .__THE_COOP_E2E__!.state.tick >= minimumTick,
+    beforeWallClick.tick + 3);
+    const afterWallClick = await page.evaluate(() => {
+      const player = (window as Window & { __THE_COOP_E2E__?: Diagnostics })
+        .__THE_COOP_E2E__!.state.players[0]!;
+      return {
+        worldX: player.worldX,
+        worldY: player.worldY,
+        routeKind: player.routeKind,
+        lastMoveSeq: player.lastMoveSeq,
+      };
+    });
+    expect(afterWallClick).toEqual({
+      worldX: beforeWallClick.worldX,
+      worldY: beforeWallClick.worldY,
+      routeKind: 'none',
+      lastMoveSeq: beforeWallClick.lastMoveSeq,
+    });
 
     // A closed-door click beyond the divider stops at the threshold and clears.
-    await clickWorld(page, center(14, 6));
+    await clickWorld(page, center(10, 8));
     await waitForState(page, 'threshold-stop route', (state) =>
       state.players[0]?.routeKind === 'threshold-stop');
     await waitForState(page, 'first player at the closed-door threshold', (state) => {
       const player = state.players[0];
       return player !== undefined
         && player.routeKind === 'none'
-        && Math.abs(player.worldX - 10.5 * 48) < 2
-        && Math.abs(player.worldY - 6.5 * 48) < 2;
+        && Math.abs(player.worldX - 6.5 * 48) < 2
+        && Math.abs(player.worldY - 8.5 * 48) < 2;
     });
 
     // Re-click the near plate, then the second player can cross to the far plate.
-    await clickWorld(page, center(8, 6));
+    await clickWorld(page, center(5, 8));
     await waitForState(page, 'near pressure plate', (state) =>
       state.nearPlatePressed && state.doorOpen);
+    if (testInfo.project.name === 'chrome') {
+      await page.waitForFunction(() => {
+        const gate = (window as Window & { __THE_COOP_E2E__?: Diagnostics })
+          .__THE_COOP_E2E__?.renderer?.gateAnimations[0];
+        return gate !== undefined
+          && gate.time >= gate.duration * 0.35
+          && gate.time <= gate.duration * 0.8
+          && gate.travel > 0.1;
+      });
+      await captureGate(page, testInfo, 'transition');
+    }
+    await page.waitForFunction(() => {
+      const gates = (window as Window & { __THE_COOP_E2E__?: Diagnostics })
+        .__THE_COOP_E2E__?.renderer?.gateAnimations;
+      return gates !== undefined
+        && gates.length > 0
+        && gates.every(({ time, duration, travel }) =>
+          Math.abs(time - duration) < 0.001 && travel > 0.1);
+    });
+    if (testInfo.project.name === 'chrome') {
+      await captureGate(page, testInfo, 'open');
+    }
     await second.page.evaluate((target) =>
-      (window as Window & { __THE_COOP_E2E__?: Diagnostics }).__THE_COOP_E2E__?.sendMoveTarget(target), center(14, 6));
+      (window as Window & { __THE_COOP_E2E__?: Diagnostics }).__THE_COOP_E2E__?.sendMoveTarget(target), center(10, 8));
     await waitForState(second.page, 'far pressure plate', (state) =>
       state.farPlatePressed && state.doorOpen);
 
-    if (testInfo.project.name === 'chrome') await captureFacility(page, testInfo);
+    if (testInfo.project.name === 'chrome') {
+      await captureFacility(page, testInfo);
+      await captureCompactFacility(page, testInfo);
+    }
 
     // Player two now holds the far plate while player one crosses; both finish.
     await page.evaluate((target) =>
-      (window as Window & { __THE_COOP_E2E__?: Diagnostics }).__THE_COOP_E2E__?.sendMoveTarget(target), center(20, 5));
+      (window as Window & { __THE_COOP_E2E__?: Diagnostics }).__THE_COOP_E2E__?.sendMoveTarget(target), center(13, 7));
     await waitForState(page, 'first player in the exit', (state) =>
-      (state.players[0]?.worldX ?? 0) >= 19 * 48);
+      (state.players[0]?.worldX ?? 0) >= 12 * 48);
     await second.page.evaluate((target) =>
-      (window as Window & { __THE_COOP_E2E__?: Diagnostics }).__THE_COOP_E2E__?.sendMoveTarget(target), center(20, 6));
+      (window as Window & { __THE_COOP_E2E__?: Diagnostics }).__THE_COOP_E2E__?.sendMoveTarget(target), center(13, 8));
     await waitForState(page, 'cooperative completion', (state) => state.phase === 'completed');
     await expect(page.getByTestId('completion-overlay')).toBeVisible();
     await expect(second.page.getByTestId('completion-overlay')).toBeVisible();
@@ -187,19 +355,19 @@ test('two isolated clients solve, reconnect, and restart the authoritative puzzl
     // Complete a second round and let the other browser restart it. This proves
     // restart sequencing follows the shared epoch rather than a per-tab counter.
     await page.evaluate((target) =>
-      (window as Window & { __THE_COOP_E2E__?: Diagnostics }).__THE_COOP_E2E__?.sendMoveTarget(target), center(8, 6));
+      (window as Window & { __THE_COOP_E2E__?: Diagnostics }).__THE_COOP_E2E__?.sendMoveTarget(target), center(5, 8));
     await waitForState(page, 'second-round near plate', (state) =>
       state.nearPlatePressed && state.doorOpen);
     await second.page.evaluate((target) =>
-      (window as Window & { __THE_COOP_E2E__?: Diagnostics }).__THE_COOP_E2E__?.sendMoveTarget(target), center(14, 6));
+      (window as Window & { __THE_COOP_E2E__?: Diagnostics }).__THE_COOP_E2E__?.sendMoveTarget(target), center(10, 8));
     await waitForState(second.page, 'second-round far plate', (state) =>
       state.farPlatePressed && state.doorOpen);
     await page.evaluate((target) =>
-      (window as Window & { __THE_COOP_E2E__?: Diagnostics }).__THE_COOP_E2E__?.sendMoveTarget(target), center(20, 5));
+      (window as Window & { __THE_COOP_E2E__?: Diagnostics }).__THE_COOP_E2E__?.sendMoveTarget(target), center(13, 7));
     await waitForState(page, 'second-round first exit', (state) =>
-      (state.players[0]?.worldX ?? 0) >= 19 * 48);
+      (state.players[0]?.worldX ?? 0) >= 12 * 48);
     await second.page.evaluate((target) =>
-      (window as Window & { __THE_COOP_E2E__?: Diagnostics }).__THE_COOP_E2E__?.sendMoveTarget(target), center(20, 6));
+      (window as Window & { __THE_COOP_E2E__?: Diagnostics }).__THE_COOP_E2E__?.sendMoveTarget(target), center(13, 8));
     await waitForState(page, 'second-round completion', (state) => state.phase === 'completed');
 
     await second.page.evaluate(() => window.dispatchEvent(new Event('offline')));
@@ -220,4 +388,18 @@ test('two isolated clients solve, reconnect, and restart the authoritative puzzl
   } finally {
     await second.close();
   }
+});
+
+test('asset loading fails closed before creating a room', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chrome', 'The deterministic loader failure runs once.');
+  await page.route('**/*.glb', (route) => route.abort('failed'));
+  await page.goto('/?e2e=1');
+  await page.getByTestId('create-room').click();
+
+  await expect(page.getByTestId('error-overlay')).toBeVisible();
+  await expect(page.getByTestId('asset-loading-overlay')).toBeHidden();
+  await expect(page.getByTestId('error-detail')).toContainText('Visual assets could not be loaded');
+  expect(await page.evaluate(() =>
+    (window as Window & { __THE_COOP_E2E__?: Diagnostics }).__THE_COOP_E2E__?.roomId)).toBeNull();
+  await expect(page.locator('#facility-root canvas')).toHaveCount(0);
 });

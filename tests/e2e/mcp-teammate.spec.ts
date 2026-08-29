@@ -1,5 +1,8 @@
 import { Client as McpClient } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import {
+  StdioClientTransport,
+  getDefaultEnvironment,
+} from '@modelcontextprotocol/sdk/client/stdio.js';
 import { expect, test, type Page } from '@playwright/test';
 import { COOPERATIVE_DISCOVERY_GOAL } from '../../src/game/index.ts';
 
@@ -37,6 +40,12 @@ interface Diagnostics {
   state: BridgeState;
   roomId: string | null;
   playerId: string | null;
+  assetReady: boolean;
+  renderer: {
+    cameraElevation: number;
+    cameraAzimuth: number;
+  } | null;
+  worldToScreen(point: { x: number; y: number }): { x: number; y: number };
   sendMoveTarget(point: { x: number; y: number }): void;
 }
 
@@ -136,11 +145,22 @@ async function moveBrowserPlayer(
   target: GridPoint,
   expected: GridPoint,
   description: string,
+  physicalClick = false,
 ): Promise<void> {
-  await page.evaluate((worldTarget) =>
-    (window as Window & { __THE_COOP_E2E__?: Diagnostics })
-      .__THE_COOP_E2E__?.sendMoveTarget(worldTarget),
-  center(target.x, target.y));
+  const worldTarget = center(target.x, target.y);
+  if (physicalClick) {
+    const screenTarget = await page.evaluate((targetPoint) =>
+      (window as Window & { __THE_COOP_E2E__?: Diagnostics })
+        .__THE_COOP_E2E__?.worldToScreen(targetPoint),
+    worldTarget);
+    if (screenTarget === undefined) throw new Error('Three.js projection diagnostics were not ready.');
+    await page.mouse.click(screenTarget.x, screenTarget.y);
+  } else {
+    await page.evaluate((targetPoint) =>
+      (window as Window & { __THE_COOP_E2E__?: Diagnostics })
+        .__THE_COOP_E2E__?.sendMoveTarget(targetPoint),
+    worldTarget);
+  }
   await page.waitForFunction(
     ({ x, y }) => {
       const player = (window as Window & { __THE_COOP_E2E__?: Diagnostics })
@@ -196,10 +216,17 @@ interface McpHarness {
 }
 
 async function createMcpClient(): Promise<McpHarness> {
+  const clientPort = process.env.THE_COOP_E2E_CLIENT_PORT ?? '5173';
+  const gameServerPort = process.env.THE_COOP_E2E_GAME_SERVER_PORT ?? '2567';
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: ['--import', 'tsx', 'src/mcp/server.ts'],
     cwd: process.cwd(),
+    env: {
+      ...getDefaultEnvironment(),
+      THE_COOP_GAME_SERVER_URL: `http://127.0.0.1:${gameServerPort}`,
+      THE_COOP_HUMAN_ORIGIN: `http://127.0.0.1:${clientPort}`,
+    },
     stderr: 'pipe',
   });
   const client = new McpClient(
@@ -281,8 +308,8 @@ test('browser Player 1 and MCP Player 2 complete the authoritative puzzle', asyn
     expect(repeatedActive.humanJoinUrl).toBeUndefined();
 
     const initial = await mcp.call('observe_game');
-    expect(initial.players?.find(({ id }) => id === 'player-1')?.grid).toEqual({ x: 3, y: 5 });
-    expect(initial.players?.find(({ id }) => id === 'player-2')?.grid).toEqual({ x: 3, y: 7 });
+    expect(initial.players?.find(({ id }) => id === 'player-1')?.grid).toEqual({ x: 3, y: 6 });
+    expect(initial.players?.find(({ id }) => id === 'player-2')?.grid).toEqual({ x: 3, y: 10 });
     expect(initial.level).not.toHaveProperty('objective');
     expect(initial.gate).not.toHaveProperty('rule');
     expect(initial.gate).not.toHaveProperty('unlocked');
@@ -302,20 +329,20 @@ test('browser Player 1 and MCP Player 2 complete the authoritative puzzle', asyn
     });
     expect(threshold).toMatchObject({
       status: 'threshold_stopped',
-      currentPosition: { x: 10, y: 6 },
+      currentPosition: { x: 6, y: 8 },
     });
     let observed = await mcp.call('observe_game');
-    expect(observed.players?.find(({ id }) => id === 'player-1')?.grid).toEqual({ x: 3, y: 5 });
+    expect(observed.players?.find(({ id }) => id === 'player-1')?.grid).toEqual({ x: 3, y: 6 });
 
     const held = await mcp.call('move_player_two', {
       target: { kind: 'interactable', id: 'plate_a' },
     });
-    expect(held).toMatchObject({ status: 'arrived', currentPosition: { x: 8, y: 6 } });
+    expect(held).toMatchObject({ status: 'arrived', currentPosition: { x: 5, y: 8 } });
     const firstHoldObservation = await mcp.call('observe_game');
     await waitForTick(page, (firstHoldObservation.session?.tick ?? 0) + 5);
     const secondHoldObservation = await mcp.call('observe_game');
     expect(secondHoldObservation.players?.find(({ id }) => id === 'player-2')).toMatchObject({
-      grid: { x: 8, y: 6 },
+      grid: { x: 5, y: 8 },
       routeState: 'none',
     });
     expect((secondHoldObservation.session?.tick ?? 0)).toBeGreaterThan(
@@ -324,45 +351,45 @@ test('browser Player 1 and MCP Player 2 complete the authoritative puzzle', asyn
 
     await page.evaluate((target) =>
       (window as Window & { __THE_COOP_E2E__?: Diagnostics }).__THE_COOP_E2E__?.sendMoveTarget(target),
-    center(8, 6));
+    center(5, 8));
     await waitForState(page, 'Player 1 to hold Plate A', (state) => {
       const player = state.players[0];
       return player?.routeKind === 'none'
-        && Math.floor(player.worldX / 48) === 8
-        && Math.floor(player.worldY / 48) === 6;
+        && Math.floor(player.worldX / 48) === 5
+        && Math.floor(player.worldY / 48) === 8;
     });
 
     const farPlate = await mcp.call('move_player_two', {
       target: { kind: 'interactable', id: 'plate_b' },
     });
-    expect(farPlate).toMatchObject({ status: 'arrived', currentPosition: { x: 14, y: 6 } });
+    expect(farPlate).toMatchObject({ status: 'arrived', currentPosition: { x: 10, y: 8 } });
 
     // Move Player 1 safely through the held gate first, but stop short of the
     // exit so Player 2 can reach the canonical exit target before completion
     // freezes both routes.
     await page.evaluate((target) =>
       (window as Window & { __THE_COOP_E2E__?: Diagnostics }).__THE_COOP_E2E__?.sendMoveTarget(target),
-    center(13, 5));
+    center(11, 5));
     await waitForState(page, 'Player 1 to cross the held gate', (state) => {
       const player = state.players[0];
       return player?.routeKind === 'none'
-        && Math.floor(player.worldX / 48) === 13
+        && Math.floor(player.worldX / 48) === 11
         && Math.floor(player.worldY / 48) === 5;
     });
 
     const completed = await mcp.call('move_player_two', {
       target: { kind: 'interactable', id: 'exit_zone' },
     });
-    expect(completed).toMatchObject({ status: 'arrived', currentPosition: { x: 20, y: 6 } });
+    expect(completed).toMatchObject({ status: 'arrived', currentPosition: { x: 13, y: 8 } });
 
     await page.evaluate((target) =>
       (window as Window & { __THE_COOP_E2E__?: Diagnostics }).__THE_COOP_E2E__?.sendMoveTarget(target),
-    center(20, 5));
+    center(13, 7));
     await waitForState(page, 'cooperative completion', (state) => state.phase === 'completed');
     await expect(page.getByTestId('completion-overlay')).toBeVisible();
 
     observed = await mcp.call('observe_game');
-    expect(observed.players?.find(({ id }) => id === 'player-2')?.grid).toEqual({ x: 20, y: 6 });
+    expect(observed.players?.find(({ id }) => id === 'player-2')?.grid).toEqual({ x: 13, y: 8 });
     expect(errors, errors.join('\n')).toEqual([]);
   } finally {
     await mcp.close();
@@ -389,10 +416,22 @@ test('browser Player 1 and MCP Player 2 complete all four levels and wrap in one
       && state.levelId === 'level_1'
       && state.levelNumber === 1
       && state.players.every((player) => player.connected));
+    await page.waitForFunction(() =>
+      (window as Window & { __THE_COOP_E2E__?: Diagnostics }).__THE_COOP_E2E__?.assetReady === true);
+    const renderer = await page.evaluate(() =>
+      (window as Window & { __THE_COOP_E2E__?: Diagnostics }).__THE_COOP_E2E__?.renderer);
+    expect(renderer).toMatchObject({ cameraAzimuth: 45 });
+    expect(renderer?.cameraElevation).toBeCloseTo(35.264, 3);
     const originalRoomId = started.roomId;
     expect(originalRoomId).toEqual(expect.any(String));
     await expect(page.getByTestId('level-indicator')).toHaveText('LEVEL 1 OF 4');
     await expect(page.getByTestId('level-name')).toHaveText('Pressure Lock');
+    await expect(page.getByTestId('local-player')).toHaveText('Explorer 1');
+    const captureFacilityEvidence = (levelNumber: number) => page.screenshot({
+      path: testInfo.outputPath(`facility-level-${levelNumber}.png`),
+      fullPage: true,
+    });
+    await captureFacilityEvidence(1);
 
     const advanceTo = async (
       levelId: string,
@@ -412,6 +451,7 @@ test('browser Player 1 and MCP Player 2 complete all four levels and wrap in one
       });
       await expect(page.getByTestId('level-indicator')).toHaveText(`LEVEL ${levelNumber} OF 4`);
       await expect(page.getByTestId('level-name')).toHaveText(levelName);
+      if (levelEpoch <= 3) await captureFacilityEvidence(levelNumber);
       expect(await page.evaluate(() =>
         (window as Window & { __THE_COOP_E2E__?: Diagnostics }).__THE_COOP_E2E__?.roomId))
         .toBe(originalRoomId);
@@ -432,21 +472,21 @@ test('browser Player 1 and MCP Player 2 complete all four levels and wrap in one
     };
 
     // Level 1: hold Plate A, exchange the hold on Plate B, and cross together.
-    await moveBrowserPlayer(page, { x: 8, y: 6 }, { x: 8, y: 6 }, 'Player 1 to hold Plate A');
+    await moveBrowserPlayer(page, { x: 5, y: 8 }, { x: 5, y: 8 }, 'Player 1 to hold Plate A', true);
     await waitForState(page, 'Level 1 gate to open', (state) =>
       state.levelId === 'level_1' && state.players[0]?.routeKind === 'none');
-    await moveMcpPlayer(mcp, 'plate_b', { x: 14, y: 6 });
-    await moveBrowserPlayer(page, { x: 13, y: 5 }, { x: 13, y: 5 }, 'Player 1 to cross Level 1 gate');
-    await moveMcpPlayer(mcp, 'exit_zone', { x: 20, y: 6 });
-    await completeWithBrowserPlayer(page, { x: 20, y: 5 }, 'Level 1 completion');
+    await moveMcpPlayer(mcp, 'plate_b', { x: 10, y: 8 });
+    await moveBrowserPlayer(page, { x: 11, y: 5 }, { x: 11, y: 5 }, 'Player 1 to cross Level 1 gate');
+    await moveMcpPlayer(mcp, 'exit_zone', { x: 13, y: 8 });
+    await completeWithBrowserPlayer(page, { x: 13, y: 7 }, 'Level 1 completion');
 
     await advanceTo('level_2', 2, 'Powered Transit', 1);
 
     // Level 2: Player 1 powers Alpha while Player 2 teleports and gets Card Alpha.
-    await moveBrowserPlayer(page, { x: 6, y: 7 }, { x: 6, y: 7 }, 'Player 1 to power Alpha');
+    await moveBrowserPlayer(page, { x: 4, y: 11 }, { x: 4, y: 11 }, 'Player 1 to power Alpha', true);
     await waitForState(page, 'Alpha teleporter to become powered', (state) =>
       state.teleporters.some(({ id, powered }) => id === 'teleporter_alpha' && powered));
-    await moveMcpPlayer(mcp, 'teleporter_alpha_home', { x: 15, y: 5 });
+    await moveMcpPlayer(mcp, 'teleporter_alpha_home', { x: 10, y: 5 });
     let observed = await mcp.call('observe_game');
     expect(observedInteractable(observed, 'teleporter_alpha_home')).toMatchObject({
       active: true,
@@ -455,31 +495,31 @@ test('browser Player 1 and MCP Player 2 complete all four levels and wrap in one
       observed,
       'teleporter_alpha_home',
     )).not.toHaveProperty('pairedWith');
-    await moveMcpPlayer(mcp, 'keycard_alpha', { x: 19, y: 3 });
+    await moveMcpPlayer(mcp, 'keycard_alpha', { x: 13, y: 3 });
     observed = await mcp.call('observe_game');
     expect(observedInteractable(observed, 'keycard_alpha')).toMatchObject({ collected: true });
     expect(observed.gate).toMatchObject({ id: 'gate_main', open: true });
     expect(observed.gate).not.toHaveProperty('unlocked');
 
     const levelTwoHold = observed.players?.find(({ id }) => id === 'player-2');
-    await moveBrowserPlayer(page, { x: 18, y: 5 }, { x: 18, y: 5 }, 'Player 1 to cross Level 2 gate');
+    await moveBrowserPlayer(page, { x: 11, y: 5 }, { x: 11, y: 5 }, 'Player 1 to cross Level 2 gate');
     const afterLevelTwoBrowserMove = await mcp.call('observe_game');
     expect(afterLevelTwoBrowserMove.players?.find(({ id }) => id === 'player-2')).toMatchObject({
       grid: levelTwoHold?.grid,
       routeState: 'none',
     });
-    await moveMcpPlayer(mcp, 'exit_zone', { x: 20, y: 6 });
-    await completeWithBrowserPlayer(page, { x: 20, y: 5 }, 'Level 2 completion');
+    await moveMcpPlayer(mcp, 'exit_zone', { x: 13, y: 8 });
+    await completeWithBrowserPlayer(page, { x: 13, y: 7 }, 'Level 2 completion');
 
     await advanceTo('level_3', 3, 'Security Handshake', 2);
 
     // Level 3: return from Alpha with the card, then use two distinct relay occupants.
-    await moveBrowserPlayer(page, { x: 5, y: 8 }, { x: 5, y: 8 }, 'Player 1 to power Level 3 Alpha');
-    await moveMcpPlayer(mcp, 'teleporter_alpha_home', { x: 15, y: 5 });
-    await moveMcpPlayer(mcp, 'keycard_alpha', { x: 19, y: 3 });
-    await moveMcpPlayer(mcp, 'teleporter_alpha_annex', { x: 8, y: 5 });
-    await moveBrowserPlayer(page, { x: 8, y: 3 }, { x: 8, y: 3 }, 'Player 1 to hold Gate Button A');
-    await moveMcpPlayer(mcp, 'gate_button_b', { x: 8, y: 9 });
+    await moveBrowserPlayer(page, { x: 4, y: 12 }, { x: 4, y: 12 }, 'Player 1 to power Level 3 Alpha', true);
+    await moveMcpPlayer(mcp, 'teleporter_alpha_home', { x: 10, y: 5 });
+    await moveMcpPlayer(mcp, 'keycard_alpha', { x: 13, y: 3 });
+    await moveMcpPlayer(mcp, 'teleporter_alpha_annex', { x: 5, y: 5 });
+    await moveBrowserPlayer(page, { x: 5, y: 3 }, { x: 5, y: 3 }, 'Player 1 to hold Gate Button A');
+    await moveMcpPlayer(mcp, 'gate_button_b', { x: 5, y: 12 });
     observed = await mcp.call('observe_game');
     expect(observedInteractable(observed, 'gate_button_a')).toMatchObject({
       occupied: true,
@@ -490,24 +530,24 @@ test('browser Player 1 and MCP Player 2 complete all four levels and wrap in one
       occupiedBy: 'player-2',
     });
     expect(observed.gate).toMatchObject({ open: true });
-    await moveBrowserPlayer(page, { x: 17, y: 5 }, { x: 17, y: 5 }, 'Player 1 to cross Level 3 gate');
-    await moveMcpPlayer(mcp, 'exit_zone', { x: 20, y: 6 });
-    await completeWithBrowserPlayer(page, { x: 20, y: 5 }, 'Level 3 completion');
+    await moveBrowserPlayer(page, { x: 9, y: 5 }, { x: 9, y: 5 }, 'Player 1 to cross Level 3 gate');
+    await moveMcpPlayer(mcp, 'exit_zone', { x: 13, y: 8 });
+    await completeWithBrowserPlayer(page, { x: 13, y: 7 }, 'Level 3 completion');
 
     await advanceTo('level_4', 4, 'Crossed Circuits', 3);
 
     // Level 4: alternate power duties across Alpha and Beta, then latch the final gate.
-    await moveBrowserPlayer(page, { x: 5, y: 7 }, { x: 5, y: 7 }, 'Player 1 to power Level 4 Alpha');
-    await moveMcpPlayer(mcp, 'teleporter_alpha_home', { x: 14, y: 5 });
-    await moveMcpPlayer(mcp, 'keycard_alpha', { x: 16, y: 3 });
-    await moveMcpPlayer(mcp, 'teleporter_beta_power', { x: 16, y: 8 });
-    await moveBrowserPlayer(page, { x: 8, y: 8 }, { x: 20, y: 9 }, 'Player 1 to traverse Beta');
-    await moveBrowserPlayer(page, { x: 21, y: 9 }, { x: 21, y: 9 }, 'Player 1 to collect Card Beta');
-    await moveBrowserPlayer(page, { x: 20, y: 9 }, { x: 8, y: 8 }, 'Player 1 to return through Beta');
+    await moveBrowserPlayer(page, { x: 4, y: 11 }, { x: 4, y: 11 }, 'Player 1 to power Level 4 Alpha', true);
+    await moveMcpPlayer(mcp, 'teleporter_alpha_home', { x: 10, y: 5 });
+    await moveMcpPlayer(mcp, 'keycard_alpha', { x: 12, y: 3 });
+    await moveMcpPlayer(mcp, 'teleporter_beta_power', { x: 12, y: 11 });
+    await moveBrowserPlayer(page, { x: 5, y: 11 }, { x: 13, y: 12 }, 'Player 1 to traverse Beta');
+    await moveBrowserPlayer(page, { x: 14, y: 13 }, { x: 14, y: 13 }, 'Player 1 to collect Card Beta');
+    await moveBrowserPlayer(page, { x: 13, y: 12 }, { x: 5, y: 11 }, 'Player 1 to return through Beta');
 
     const betaHoldObservation = await mcp.call('observe_game');
     expect(betaHoldObservation.players?.find(({ id }) => id === 'player-2')).toMatchObject({
-      grid: { x: 16, y: 8 },
+      grid: { x: 12, y: 11 },
       routeState: 'none',
     });
     expect(observedInteractable(betaHoldObservation, 'teleporter_beta_power')).toMatchObject({
@@ -518,10 +558,10 @@ test('browser Player 1 and MCP Player 2 complete all four levels and wrap in one
       collected: true,
     });
 
-    await moveBrowserPlayer(page, { x: 5, y: 7 }, { x: 5, y: 7 }, 'Player 1 to repower Alpha');
-    await moveMcpPlayer(mcp, 'teleporter_alpha_annex', { x: 8, y: 5 });
-    await moveBrowserPlayer(page, { x: 8, y: 3 }, { x: 8, y: 3 }, 'Player 1 to hold final Gate Button A');
-    await moveMcpPlayer(mcp, 'gate_button_b', { x: 8, y: 9 });
+    await moveBrowserPlayer(page, { x: 4, y: 11 }, { x: 4, y: 11 }, 'Player 1 to repower Alpha');
+    await moveMcpPlayer(mcp, 'teleporter_alpha_annex', { x: 5, y: 5 });
+    await moveBrowserPlayer(page, { x: 5, y: 3 }, { x: 5, y: 3 }, 'Player 1 to hold final Gate Button A');
+    await moveMcpPlayer(mcp, 'gate_button_b', { x: 5, y: 13 });
     observed = await mcp.call('observe_game');
     expect(observedInteractable(observed, 'keycard_alpha')).toMatchObject({ collected: true });
     expect(observedInteractable(observed, 'keycard_beta')).toMatchObject({ collected: true });
@@ -533,13 +573,13 @@ test('browser Player 1 and MCP Player 2 complete all four levels and wrap in one
     });
     expect(observed.gate).toMatchObject({ open: true });
 
-    await moveBrowserPlayer(page, { x: 18, y: 4 }, { x: 18, y: 4 }, 'Player 1 to cross the final gate');
-    await moveMcpPlayer(mcp, 'exit_zone', { x: 19, y: 4 });
-    await completeWithBrowserPlayer(page, { x: 20, y: 4 }, 'Level 4 completion');
+    await moveBrowserPlayer(page, { x: 9, y: 4 }, { x: 9, y: 4 }, 'Player 1 to cross the final gate');
+    await moveMcpPlayer(mcp, 'exit_zone', { x: 13, y: 8 });
+    await completeWithBrowserPlayer(page, { x: 13, y: 7 }, 'Level 4 completion');
 
     const wrapped = await advanceTo('level_1', 1, 'Pressure Lock', 4, 'Play Again');
-    expect(wrapped.players?.find(({ id }) => id === 'player-1')?.grid).toEqual({ x: 3, y: 5 });
-    expect(wrapped.players?.find(({ id }) => id === 'player-2')?.grid).toEqual({ x: 3, y: 7 });
+    expect(wrapped.players?.find(({ id }) => id === 'player-1')?.grid).toEqual({ x: 3, y: 6 });
+    expect(wrapped.players?.find(({ id }) => id === 'player-2')?.grid).toEqual({ x: 3, y: 10 });
     expect(errors, errors.join('\n')).toEqual([]);
   } finally {
     await mcp.close();

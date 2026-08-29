@@ -6,6 +6,14 @@ Date: 2026-07-28
 
 Completed
 
+## Superseding Layout Amendment
+
+The campaign originally shipped on the 24 by 12 footprint documented below.
+Direct visual review on 2026-07-28 later moved all four levels to 16 by 16 under
+`docs/plans/active/square-isometric-campaign.md`. The mechanic cadence,
+teleporter behavior, keycard sharing, relay requirements, campaign order, room
+authority, and MCP surface described here remain unchanged.
+
 ## Outcome
 
 Turn the current single-level vertical slice into a four-level campaign that

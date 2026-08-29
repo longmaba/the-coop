@@ -8,3 +8,5 @@ the active execution plan and do not require a separate decision.
 
 An installed consumer begins with no fabricated decisions. Add local decision
 documents here as real choices are accepted, then index them in this file.
+
+- [0001 Use Three.js For The Supplied-Asset Facility Client](0001-threejs-visual-client.md)

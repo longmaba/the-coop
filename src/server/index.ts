@@ -21,9 +21,21 @@ export async function startGameServer(port = 2567, hostname = '127.0.0.1'): Prom
   return gameServer;
 }
 
+export function parseDirectServerPort(raw: string | undefined): number {
+  if (raw === undefined) return 2567;
+  const port = Number(raw);
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+    throw new Error('The game server port must be an integer between 1 and 65535.');
+  }
+  return port;
+}
+
 const isDirectEntry = process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isDirectEntry) {
-  void startGameServer().catch((error: unknown) => {
+  const runDirectServer = async (): Promise<void> => {
+    await startGameServer(parseDirectServerPort(process.argv[2]));
+  };
+  void runDirectServer().catch((error: unknown) => {
     console.error(error);
     process.exitCode = 1;
   });

@@ -79,19 +79,19 @@ function mechanismGrid(
 }
 
 describe('frozen four-level catalog', () => {
-  it('keeps Level 1 compatible and validates every fixed 24x12 definition', () => {
+  it('keeps Level 1 compatible and validates every fixed 16x16 definition', () => {
     expect(LEVEL_CATALOG.map(({ id, number }) => ({ id, number }))).toEqual([
       { id: 'level_1', number: 1 },
       { id: 'level_2', number: 2 },
       { id: 'level_3', number: 3 },
       { id: 'level_4', number: 4 },
     ]);
-    expect(LEVEL_CATALOG.every(({ width, height }) => width === 24 && height === 12)).toBe(true);
+    expect(LEVEL_CATALOG.every(({ width, height }) => width === 16 && height === 16)).toBe(true);
     expect(LEVEL_CATALOG.every(Object.isFrozen)).toBe(true);
     expect(validateLevelCatalog()).toEqual([]);
     expect(getLevelDefinition('level_1')).toBe(LEVEL_ONE);
-    expect(LEVEL_ONE.nearPlate).toEqual({ x: 8, y: 6 });
-    expect(LEVEL_ONE.farPlate).toEqual({ x: 14, y: 6 });
+    expect(LEVEL_ONE.nearPlate).toEqual({ x: 5, y: 8 });
+    expect(LEVEL_ONE.farPlate).toEqual({ x: 10, y: 8 });
     expect(LEVEL_ONE.exitCells).toHaveLength(12);
     expect(Object.isFrozen(LEVEL_FOUR.gateRule)).toBe(true);
     if (LEVEL_FOUR.gateRule.kind === 'keycards-and-relays') {
@@ -141,7 +141,7 @@ describe('authoritative campaign mechanics', () => {
       mechanismGrid(LEVEL_TWO, 'teleporter_alpha_annex'),
     );
 
-    state = place(state, 1, { x: 16, y: 5 });
+    state = place(state, 1, { x: 11, y: 5 });
     state = stepGame(state);
     expect(state.players[1].blockedTeleporterPadId).toBeNull();
     state = place(state, 1, mechanismGrid(LEVEL_TWO, 'teleporter_alpha_annex'));
@@ -163,7 +163,7 @@ describe('authoritative campaign mechanics', () => {
     expect(state.latchedGateIds).toEqual(['gate_main']);
     expect(state.doorOpen).toBe(true);
 
-    state = place(state, 1, { x: 17, y: 3 });
+    state = place(state, 1, { x: 11, y: 3 });
     state = stepGame(state);
     expect(state.collectedKeycardIds).toEqual(['keycard_alpha']);
     expect(state.doorOpen).toBe(true);

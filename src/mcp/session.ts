@@ -15,7 +15,7 @@ import { CoopStateSchema } from '../server/CoopRoom.ts';
 import { createPairingToken, type CreatedPairingToken } from '../server/pairing.ts';
 
 const DEFAULT_GAME_ENDPOINT = 'http://127.0.0.1:2567';
-const HUMAN_ORIGIN = 'http://127.0.0.1:5173';
+const HUMAN_ORIGIN = process.env.THE_COOP_HUMAN_ORIGIN ?? 'http://127.0.0.1:5173';
 const SEAT_TIMEOUT_MS = 5_000;
 
 export interface MoveResultMessage {

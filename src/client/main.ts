@@ -1,9 +1,12 @@
-import Phaser from 'phaser';
 import type { MoveTargetCommand, RestartCommand, WorldPoint } from '../game/index.ts';
 import { CueAudio } from './audio.ts';
-import { FacilityScene } from './facility-scene.ts';
 import { CoopNetwork, savedRoomId } from './network.ts';
 import { campaignPresentation } from './presentation.ts';
+import {
+  isThreeAssetLibraryReady,
+  preloadThreeAssets,
+} from './three/assets.ts';
+import { FacilityRenderer } from './three/facility-renderer.ts';
 import {
   cloneSnapshot,
   EMPTY_SNAPSHOT,
@@ -21,11 +24,11 @@ const app: HTMLElement = (() => {
 
 const audio = new CueAudio();
 let network: CoopNetwork | null = null;
-let game: Phaser.Game | null = null;
-let facility: FacilityScene | null = null;
+let facility: FacilityRenderer | null = null;
 let snapshot: CoopSnapshot = cloneSnapshot(EMPTY_SNAPSHOT);
 let moveSeq = 0;
 let transitionSeq = 0;
+let lifecycleGeneration = 0;
 let status: ClientStatus = 'landing';
 let statusDetail = '';
 
@@ -64,9 +67,9 @@ async function copy(text: string): Promise<void> {
 }
 
 function landing(error = ''): void {
+  lifecycleGeneration += 1;
+  facility?.destroy();
   facility = null;
-  game?.destroy(true);
-  game = null;
   app.innerHTML = `
     <main class="landing" data-testid="landing-shell">
       <section class="landing-card" aria-labelledby="game-title">
@@ -94,6 +97,9 @@ function landing(error = ''): void {
   element<HTMLButtonElement>('[data-testid="create-room"]')?.addEventListener('click', () => { void startCreate(); });
   element<HTMLButtonElement>('[data-testid="join-room"]')?.addEventListener('click', () => { void startJoin(input?.value ?? ''); });
   input?.addEventListener('keydown', (event) => { if (event.key === 'Enter') void startJoin(input.value); });
+  void preloadThreeAssets().catch(() => {
+    // Create/join surfaces the actionable error; speculative landing preload is quiet.
+  });
 }
 
 function gameShell(): void {
@@ -109,7 +115,12 @@ function gameShell(): void {
       </header>
       <p class="objective" data-testid="objective" aria-live="polite">Waiting for both explorers…</p>
       <p id="game-help" class="sr-only">Puzzle facility. Click a destination to move your explorer. Coordinate movement-triggered controls with your partner and get both explorers to the exit.</p>
-      <div id="phaser-root" class="phaser-root" role="application" aria-describedby="game-help" aria-label="The Coop puzzle facility"></div>
+      <div id="facility-root" class="facility-root" role="application" aria-describedby="game-help" aria-label="The Coop puzzle facility"></div>
+      <div class="asset-loading-overlay" data-testid="asset-loading-overlay" role="status" aria-live="polite">
+        <span class="loading-spinner" aria-hidden="true"></span>
+        <strong>Preparing the facility</strong>
+        <span>Loading explorers and modular level assets…</span>
+      </div>
       <div class="connection-overlay" data-testid="reconnect-overlay" role="status" aria-live="polite" hidden><strong>Reconnecting</strong><span>Connection lost. Retrying…</span></div>
       <div class="error-overlay" data-testid="error-overlay" role="alertdialog" aria-modal="true" hidden>
         <h2>Connection problem</h2><p data-testid="error-detail">The game server could not be reached.</p>
@@ -143,24 +154,31 @@ function gameShell(): void {
   });
 }
 
-function createGame(): void {
-  const scene = new FacilityScene({
+async function createRenderer(generation: number): Promise<void> {
+  await preloadThreeAssets();
+  if (generation !== lifecycleGeneration) return;
+  const root = element<HTMLElement>('#facility-root');
+  if (root === null) throw new Error('Missing facility renderer mount.');
+  const renderer = new FacilityRenderer({
     getSnapshot: () => snapshot,
     getPlayerId: () => network?.playerId ?? null,
     sendTarget: (target) => sendTarget(target),
     onGesture: () => audio.unlock(),
   });
-  scene.setCueListener((cue) => audio.play(cue));
-  facility = scene;
-  game = new Phaser.Game({
-    type: Phaser.AUTO,
-    width: 1280,
-    height: 720,
-    parent: 'phaser-root',
-    backgroundColor: '#071116',
-    scene: [scene],
-    scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH, width: 1280, height: 720 },
-  });
+  renderer.setCueListener((cue) => audio.play(cue));
+  try {
+    await renderer.start(root);
+  } catch (error: unknown) {
+    renderer.destroy();
+    throw error;
+  }
+  if (generation !== lifecycleGeneration) {
+    renderer.destroy();
+    return;
+  }
+  facility = renderer;
+  const loading = element<HTMLElement>('[data-testid="asset-loading-overlay"]');
+  if (loading !== null) loading.hidden = true;
 }
 
 function sendTarget(target: WorldPoint): void {
@@ -244,8 +262,18 @@ function createNetwork(): CoopNetwork {
 }
 
 async function startCreate(): Promise<void> {
+  const generation = ++lifecycleGeneration;
   gameShell();
-  createGame();
+  status = 'creating';
+  statusDetail = '';
+  try {
+    await createRenderer(generation);
+  } catch (error: unknown) {
+    if (generation !== lifecycleGeneration) return;
+    showAssetError(error);
+    return;
+  }
+  if (generation !== lifecycleGeneration) return;
   network = createNetwork();
   try { await network.create(); } catch { showConnectionError(); }
 }
@@ -253,8 +281,18 @@ async function startCreate(): Promise<void> {
 async function startJoin(rawRoomId: string, pairingToken?: string): Promise<void> {
   const roomId = rawRoomId.trim();
   if (!/^[A-Za-z0-9_-]{4,128}$/.test(roomId)) { landing('Enter a valid room code.'); return; }
+  const generation = ++lifecycleGeneration;
   gameShell();
-  createGame();
+  status = 'joining';
+  statusDetail = '';
+  try {
+    await createRenderer(generation);
+  } catch (error: unknown) {
+    if (generation !== lifecycleGeneration) return;
+    showAssetError(error);
+    return;
+  }
+  if (generation !== lifecycleGeneration) return;
   network = createNetwork();
   try {
     const restored = await network.reconnectIfMatching(roomId);
@@ -270,6 +308,20 @@ async function startJoin(rawRoomId: string, pairingToken?: string): Promise<void
       history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
     }
   } catch { showConnectionError(); }
+}
+
+function showAssetError(error: unknown): void {
+  facility?.destroy();
+  facility = null;
+  network?.dispose(true);
+  network = null;
+  status = 'error';
+  statusDetail = error instanceof Error
+    ? `Visual assets could not be loaded: ${error.message}`
+    : 'Visual assets could not be loaded. Return to the lobby and retry.';
+  const loading = element<HTMLElement>('[data-testid="asset-loading-overlay"]');
+  if (loading !== null) loading.hidden = true;
+  renderHud();
 }
 
 function showConnectionError(): void {
@@ -300,10 +352,13 @@ function installDiagnostics(): void {
     get state(): CoopSnapshot { return cloneSnapshot(snapshot); },
     get roomId(): string | null { return network?.roomId ?? null; },
     get playerId(): string | null { return network?.playerId ?? null; },
+    get assetReady(): boolean { return isThreeAssetLibraryReady() && facility !== null; },
+    get renderer(): unknown { return facility?.getDiagnostics() ?? null; },
     worldToScreen(point: WorldPoint): WorldPoint { return facility?.worldToScreen(point) ?? { x: 64 + point.x, y: 72 + point.y }; },
     sendMoveTarget(point: WorldPoint): void { sendTarget(point); },
     restartLevel(): void { requestReplay(); },
     nextLevel(): void { requestAdvance(); },
+    setVisualTime(milliseconds: number | null): void { facility?.setVisualTime(milliseconds); },
   };
   Object.assign(window, { __THE_COOP_E2E__: bridge });
 }

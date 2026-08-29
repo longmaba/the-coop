@@ -163,7 +163,7 @@ describe('authoritative private coop room', () => {
         players: [
           {
             ...state.players[0],
-            position: { x: 6.5 * CELL_SIZE, y: 7.5 * CELL_SIZE },
+            position: { x: 4.5 * CELL_SIZE, y: 11.5 * CELL_SIZE },
             route: [],
             routeKind: 'none',
           },
@@ -448,22 +448,22 @@ describe('authoritative private coop room', () => {
       // Controlled completion: guest holds the near plate while creator reaches
       // the far plate; guest crosses to the exit, then creator joins the exit.
       const guestToNearPlate = nextMessage<{ accepted: boolean }>(guest, 'moveResult');
-      guest.send('moveTarget', { seq: 1, worldX: 8.5 * CELL_SIZE, worldY: 6.5 * CELL_SIZE });
+      guest.send('moveTarget', { seq: 1, worldX: 5.5 * CELL_SIZE, worldY: 8.5 * CELL_SIZE });
       await expect(guestToNearPlate).resolves.toMatchObject({ accepted: true });
       await waitFor(() => guest?.state.nearPlatePressed === true, 'near plate press', 8_000);
 
       const creatorToFarPlate = nextMessage<{ accepted: boolean }>(reconnectedCreator, 'moveResult');
-      reconnectedCreator.send('moveTarget', { seq: 2, worldX: 14.5 * CELL_SIZE, worldY: 6.5 * CELL_SIZE });
+      reconnectedCreator.send('moveTarget', { seq: 2, worldX: 10.5 * CELL_SIZE, worldY: 8.5 * CELL_SIZE });
       await expect(creatorToFarPlate).resolves.toMatchObject({ accepted: true });
       await waitFor(() => reconnectedCreator?.state.farPlatePressed === true, 'far plate press', 10_000);
 
       const guestToExit = nextMessage<{ accepted: boolean }>(guest, 'moveResult');
-      guest.send('moveTarget', { seq: 2, worldX: 20.5 * CELL_SIZE, worldY: 5.5 * CELL_SIZE });
+      guest.send('moveTarget', { seq: 2, worldX: 13.5 * CELL_SIZE, worldY: 7.5 * CELL_SIZE });
       await expect(guestToExit).resolves.toMatchObject({ accepted: true });
-      await waitFor(() => (guest?.state.players[1]?.worldX ?? 0) >= 19 * CELL_SIZE, 'guest exit arrival', 10_000);
+      await waitFor(() => (guest?.state.players[1]?.worldX ?? 0) >= 12 * CELL_SIZE, 'guest exit arrival', 10_000);
 
       const creatorToExit = nextMessage<{ accepted: boolean }>(reconnectedCreator, 'moveResult');
-      reconnectedCreator.send('moveTarget', { seq: 3, worldX: 20.5 * CELL_SIZE, worldY: 6.5 * CELL_SIZE });
+      reconnectedCreator.send('moveTarget', { seq: 3, worldX: 13.5 * CELL_SIZE, worldY: 8.5 * CELL_SIZE });
       await expect(creatorToExit).resolves.toMatchObject({ accepted: true });
       await waitFor(() => reconnectedCreator?.state.phase === 'completed', 'completed authoritative state', 10_000);
 
