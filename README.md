@@ -35,6 +35,13 @@ movement tools. This browser flow differs from the stdio teammate below:
 WebMCP joins a room the human already created, while stdio `start_game` creates a
 human-AI room and returns a one-time Explorer 1 link.
 
+After creating a normal room, Explorer 1 sees a **Bring in Explorer 2** dialog
+with a copy-ready agent prompt containing the current website and room code. The
+prompt asks the agent to connect through WebMCP, call `join_game`, play its own
+explorer while letting the human lead, avoid unsolicited puzzle solutions, and
+talk like a friendly co-player. **Invite agent** in the room HUD reopens the
+dialog until Explorer 2 connects.
+
 Calling `chat` with `{ "message": "Hold Plate A" }` displays the message in the
 active game for five seconds; a newer message replaces it and restarts that
 timer. Messages are limited to 500 Unicode characters. On the landing page

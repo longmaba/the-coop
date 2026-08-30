@@ -73,6 +73,15 @@ the deterministic Explorer A default), and succeeds only after the server
 confirms Player 2 in seat 2. The browser adapter uses the page's existing network
 and snapshot rather than creating a second session.
 
+Successful human room creation opens a host-only onboarding dialog with a
+copy-ready prompt. It uses the current game URL without invite query or pairing
+details, includes the authoritative room code, and tells the agent to join with
+WebMCP as Explorer 2. The agent plays its own explorer but lets the human lead,
+does not offer unsolicited solutions, and speaks like a friendly co-player. The
+host may reopen the dialog from the HUD while seat 2 is empty; it closes and the
+action disables when the partner connects. Clipboard failure leaves the prompt
+selected for a normal keyboard copy.
+
 Both teammate adapters use the same transport-neutral observation, target, and
 movement-settlement policy. Observations expose the active level, mechanism
 geometry and state, players, routes, connectivity, and a neutral cooperative

@@ -215,6 +215,114 @@ async function captureGate(
   });
 }
 
+test('host receives a copy-ready WebMCP teammate prompt with accessible responsive controls', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chrome', 'The onboarding dialog composition path runs once.');
+  test.setTimeout(25_000);
+  const errors: string[] = [];
+  collectPageErrors(page, errors);
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        async writeText(text: string) {
+          (window as Window & { __COPIED_AGENT_PROMPT__?: string }).__COPIED_AGENT_PROMPT__ = text;
+        },
+      },
+    });
+  });
+
+  await page.goto('/?e2e=1&room=stale-room');
+  await page.getByTestId('create-room').click();
+  const id = await roomId(page);
+  const dialog = page.getByTestId('agent-invite-dialog');
+  const prompt = page.getByTestId('agent-invite-prompt');
+
+  await expect(dialog).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Bring in Explorer 2' })).toBeVisible();
+  await expect(page.getByTestId('copy-agent-prompt')).toBeFocused();
+  const promptText = await prompt.inputValue();
+  const expectedGameUrl = new URL(page.url());
+  expectedGameUrl.search = '';
+  expectedGameUrl.hash = '';
+  expect(promptText).toContain(`Open ${expectedGameUrl.toString()} in a WebMCP-capable browser`);
+  expect(promptText).toContain(`join room code ${id}`);
+  expect(promptText).toContain('let the human lead the session and control Explorer 1');
+  expect(promptText).toContain('only offer suggestions when the human asks for help');
+  expect(promptText).toContain('like a friend playing alongside them');
+  expect(promptText).not.toContain('e2e=1');
+  expect(promptText).not.toContain('stale-room');
+
+  await page.screenshot({ path: testInfo.outputPath('agent-invite-desktop.png'), fullPage: true });
+  await page.getByTestId('copy-agent-prompt').click();
+  await expect(page.getByTestId('agent-invite-copy-status')).toHaveText(
+    'Prompt copied. Paste it into your agent.',
+  );
+  expect(await page.evaluate(() =>
+    (window as Window & { __COPIED_AGENT_PROMPT__?: string }).__COPIED_AGENT_PROMPT__)).toBe(promptText);
+
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(page.getByTestId('open-agent-invite')).toBeFocused();
+  await page.getByTestId('open-agent-invite').click();
+  await expect(dialog).toBeVisible();
+
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        async writeText() {
+          throw new Error('Clipboard permission denied.');
+        },
+      },
+    });
+  });
+  await page.getByTestId('copy-agent-prompt').click();
+  await expect(page.getByTestId('agent-invite-copy-status')).toHaveText(
+    'Clipboard unavailable. The prompt is selected; press Ctrl or Command + C.',
+  );
+  await expect(prompt).toBeFocused();
+  expect(await prompt.evaluate((field: HTMLTextAreaElement) => ({
+    start: field.selectionStart,
+    end: field.selectionEnd,
+  }))).toEqual({ start: 0, end: promptText.length });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: testInfo.outputPath('agent-invite-compact.png'), fullPage: true });
+  const fit = await page.evaluate(() => {
+    const popup = document.querySelector<HTMLDialogElement>('[data-testid="agent-invite-dialog"]')!;
+    const copyButton = document.querySelector<HTMLButtonElement>('[data-testid="copy-agent-prompt"]')!;
+    const continueButton = document.querySelector<HTMLButtonElement>('[data-testid="close-agent-invite"]')!;
+    const closeButton = document.querySelector<HTMLButtonElement>('[data-testid="close-agent-invite-icon"]')!;
+    const bounds = popup.getBoundingClientRect();
+    return {
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      scrollWidth: document.documentElement.scrollWidth,
+      left: bounds.left,
+      right: bounds.right,
+      top: bounds.top,
+      bottom: bounds.bottom,
+      copyHeight: copyButton.getBoundingClientRect().height,
+      continueHeight: continueButton.getBoundingClientRect().height,
+      closeWidth: closeButton.getBoundingClientRect().width,
+      closeHeight: closeButton.getBoundingClientRect().height,
+    };
+  });
+  expect(fit.scrollWidth).toBeLessThanOrEqual(fit.viewportWidth);
+  expect(fit.left).toBeGreaterThanOrEqual(0);
+  expect(fit.right).toBeLessThanOrEqual(fit.viewportWidth);
+  expect(fit.top).toBeGreaterThanOrEqual(0);
+  expect(fit.bottom).toBeLessThanOrEqual(fit.viewportHeight);
+  expect(fit.copyHeight).toBeGreaterThanOrEqual(44);
+  expect(fit.continueHeight).toBeGreaterThanOrEqual(44);
+  expect(fit.closeWidth).toBeGreaterThanOrEqual(44);
+  expect(fit.closeHeight).toBeGreaterThanOrEqual(44);
+
+  await page.getByTestId('close-agent-invite').click();
+  await expect(dialog).toBeHidden();
+  expect(errors, errors.join('\n')).toEqual([]);
+});
+
 test('browser chat tool composes with the active game popup lifecycle', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chrome', 'The browser API composition path runs once.');
   test.setTimeout(20_000);
@@ -259,8 +367,11 @@ test('browser chat tool composes with the active game popup lifecycle', async ({
 });
 
 test('browser WebMCP joins as Player 2, observes safely, and confirms arrival', async ({ browser, page }, testInfo) => {
-  test.skip(testInfo.project.name !== 'chrome', 'The experimental browser adapter composition path runs once.');
-  test.setTimeout(35_000);
+  test.skip(
+    testInfo.project.name !== 'chrome' && testInfo.project.name !== 'chrome-sites',
+    'The browser adapter composition path runs once per network transport.',
+  );
+  test.setTimeout(testInfo.project.name === 'chrome-sites' ? 60_000 : 35_000);
   const installWebMcpCapture = async (target: Page): Promise<void> => {
     await target.addInitScript(() => {
       const browserWindow = window as Window & { __WEBMCP_TOOLS__?: Record<string, BrowserSiteTool> };
@@ -287,37 +398,47 @@ test('browser WebMCP joins as Player 2, observes safely, and confirms arrival', 
   expect(landingObservation).toMatchObject({ status: 'unavailable' });
   await page.getByTestId('create-room').click();
   const id = await roomId(page);
+  await expect(page.getByTestId('agent-invite-dialog')).toBeVisible();
   const playerOneObservation = await page.evaluate(async () =>
     (window as Window & { __WEBMCP_TOOLS__?: Record<string, BrowserSiteTool> })
       .__WEBMCP_TOOLS__!.observe_game!.execute({}));
   expect(playerOneObservation).toMatchObject({ status: 'wrong_seat' });
 
-  const staleContext = await browser.newContext();
-  const stalePage = await staleContext.newPage();
-  await stalePage.route('**/*.glb', async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    await route.continue();
-  });
-  await installWebMcpCapture(stalePage);
-  try {
-    await stalePage.goto('/?e2e=1');
-    await stalePage.waitForFunction(() =>
-      (window as Window & { __WEBMCP_TOOLS__?: Record<string, BrowserSiteTool> })
-        .__WEBMCP_TOOLS__?.join_game !== undefined);
-    const staleJoin = stalePage.evaluate(async (code) => {
-      try {
-        await (window as Window & { __WEBMCP_TOOLS__?: Record<string, BrowserSiteTool> })
-          .__WEBMCP_TOOLS__!.join_game!.execute({ code });
-        return '';
-      } catch (error) {
-        return error instanceof Error ? error.message : String(error);
-      }
-    }, id);
-    await stalePage.getByTestId('return-to-lobby').click();
-    await expect(staleJoin).resolves.toMatch(/cancelled|stale/i);
-    await expect(stalePage.getByTestId('landing-shell')).toBeVisible();
-  } finally {
-    await staleContext.close();
+  if (testInfo.project.name === 'chrome') {
+    const staleContext = await browser.newContext();
+    const stalePage = await staleContext.newPage();
+    await stalePage.route('**/*.glb', async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      await route.continue();
+    });
+    await installWebMcpCapture(stalePage);
+    try {
+      await stalePage.goto('/?e2e=1');
+      await stalePage.waitForFunction(() =>
+        (window as Window & { __WEBMCP_TOOLS__?: Record<string, BrowserSiteTool> })
+          .__WEBMCP_TOOLS__?.join_game !== undefined);
+      await stalePage.evaluate((code) => {
+        const browserWindow = window as Window & {
+          __STALE_JOIN_RESULT__?: string;
+          __WEBMCP_TOOLS__?: Record<string, BrowserSiteTool>;
+        };
+        void Promise.resolve(browserWindow.__WEBMCP_TOOLS__!.join_game!.execute({ code })).then(
+          () => { browserWindow.__STALE_JOIN_RESULT__ = ''; },
+          (error: unknown) => {
+            browserWindow.__STALE_JOIN_RESULT__ = error instanceof Error ? error.message : String(error);
+          },
+        );
+      }, id);
+      await stalePage.getByTestId('return-to-lobby').click();
+      await stalePage.waitForFunction(() =>
+        typeof (window as Window & { __STALE_JOIN_RESULT__?: string }).__STALE_JOIN_RESULT__ === 'string');
+      expect(await stalePage.evaluate(() =>
+        (window as Window & { __STALE_JOIN_RESULT__?: string }).__STALE_JOIN_RESULT__))
+        .toMatch(/cancelled|stale|superseded/i);
+      await expect(stalePage.getByTestId('landing-shell')).toBeVisible();
+    } finally {
+      await staleContext.close();
+    }
   }
 
   const agentContext = await browser.newContext();
@@ -361,6 +482,8 @@ test('browser WebMCP joins as Player 2, observes safely, and confirms arrival', 
     await waitForState(agentPage, 'WebMCP avatar selection to reach the room snapshot', (state) =>
       state.players.some((player) =>
         player.id === 'player-2' && player.avatarId === 'character-male-f'));
+    await expect(page.getByTestId('agent-invite-dialog')).toBeHidden();
+    await expect(page.getByTestId('open-agent-invite')).toBeDisabled();
 
     const observed = await agentPage.evaluate(async () =>
       (window as Window & { __WEBMCP_TOOLS__?: Record<string, BrowserSiteTool> })
@@ -391,29 +514,34 @@ test('browser WebMCP joins as Player 2, observes safely, and confirms arrival', 
       phase: 'playing',
     });
 
-    await page.getByTestId('return-to-lobby').click();
-    await expect(agentPage.getByTestId('abandoned-overlay')).toBeVisible();
-    const terminalResults = await agentPage.evaluate(async () => {
-      const tools = (window as Window & { __WEBMCP_TOOLS__?: Record<string, BrowserSiteTool> })
-        .__WEBMCP_TOOLS__!;
-      return {
-        observation: await tools.observe_game!.execute({}),
-        movement: await tools.move_player_two!.execute({
-          target: { kind: 'grid', x: 5, y: 8 },
-          waitUntil: 'arrived',
-        }),
-      };
-    });
-    expect(terminalResults).toEqual({
-      observation: {
-        status: 'unavailable',
-        reason: 'The Player 2 browser session is no longer available.',
-      },
-      movement: {
-        status: 'unavailable',
-        reason: 'The Player 2 browser session is no longer available.',
-      },
-    });
+    if (testInfo.project.name === 'chrome-sites') {
+      await agentPage.getByTestId('return-to-lobby').click();
+      await expect(agentPage.getByTestId('landing-shell')).toBeVisible();
+    } else {
+      await page.getByTestId('return-to-lobby').click();
+      await expect(agentPage.getByTestId('abandoned-overlay')).toBeVisible();
+      const terminalResults = await agentPage.evaluate(async () => {
+        const tools = (window as Window & { __WEBMCP_TOOLS__?: Record<string, BrowserSiteTool> })
+          .__WEBMCP_TOOLS__!;
+        return {
+          observation: await tools.observe_game!.execute({}),
+          movement: await tools.move_player_two!.execute({
+            target: { kind: 'grid', x: 5, y: 8 },
+            waitUntil: 'arrived',
+          }),
+        };
+      });
+      expect(terminalResults).toEqual({
+        observation: {
+          status: 'unavailable',
+          reason: 'The Player 2 browser session is no longer available.',
+        },
+        movement: {
+          status: 'unavailable',
+          reason: 'The Player 2 browser session is no longer available.',
+        },
+      });
+    }
   } finally {
     await agentContext.close();
   }
@@ -456,9 +584,12 @@ test('two isolated clients solve, reconnect, and restart the authoritative puzzl
       { playerId: 'player-1', avatarId: 'character-female-c' },
       { playerId: 'player-2', avatarId: 'character-male-e' },
     ]);
-    await page.waitForFunction(() =>
-      (window as Window & { __THE_COOP_E2E__?: Diagnostics })
-        .__THE_COOP_E2E__?.renderer?.renderedPlayers.length === 2);
+    await page.waitForFunction(() => {
+      const renderedPlayers = (window as Window & { __THE_COOP_E2E__?: Diagnostics })
+        .__THE_COOP_E2E__?.renderer?.renderedPlayers;
+      return renderedPlayers?.[0]?.avatarId === 'character-female-c'
+        && renderedPlayers[1]?.avatarId === 'character-male-e';
+    });
     expect(await page.evaluate(() =>
       (window as Window & { __THE_COOP_E2E__?: Diagnostics })
         .__THE_COOP_E2E__?.renderer?.renderedPlayers)).toEqual([
@@ -472,10 +603,13 @@ test('two isolated clients solve, reconnect, and restart the authoritative puzzl
     // Sites transport uses HTTP polling, while reload below covers its saved
     // seat reconnection path.
     if (!testInfo.project.name.endsWith('-sites')) {
-      await page.evaluate(() => window.dispatchEvent(new Event('offline')));
-      await waitForState(second.page, 'early connection drop', (state) =>
+      const reconnectOverlayBecameVisible = expect(
+        page.getByTestId('reconnect-overlay'),
+      ).toBeVisible();
+      const earlyConnectionDrop = waitForState(second.page, 'early connection drop', (state) =>
         state.phase === 'reconnectGrace' && state.players[0]?.connected === false);
-      await expect(page.getByTestId('reconnect-overlay')).toBeVisible();
+      await page.evaluate(() => window.dispatchEvent(new Event('offline')));
+      await Promise.all([reconnectOverlayBecameVisible, earlyConnectionDrop]);
       await waitForState(second.page, 'automatic early reconnection', (state) =>
         state.phase === 'playing' && state.players.every((player) => player.connected));
       await expect(page.getByTestId('reconnect-overlay')).toBeHidden();

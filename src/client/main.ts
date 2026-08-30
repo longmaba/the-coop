@@ -14,6 +14,7 @@ import {
 } from '../mcp/game-tools-policy.ts';
 import { PlayerTwoMovementCoordinator } from '../mcp/movement.ts';
 import { CueAudio } from './audio.ts';
+import { createAgentInvitePrompt } from './agent-invite.ts';
 import { cleanupOwnedBrowserLifecycle, ownsBrowserLifecycle } from './lifecycle.ts';
 import { CoopNetwork, savedRoomId } from './network.ts';
 import { campaignPresentation } from './presentation.ts';
@@ -116,8 +117,51 @@ function inviteUrl(): string {
   return roomId === null || roomId === undefined ? window.location.href : `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(roomId)}`;
 }
 
-async function copy(text: string): Promise<void> {
-  try { await navigator.clipboard.writeText(text); } catch { /* Clipboard availability is non-essential. */ }
+async function copy(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function closeAgentInvite(): void {
+  const dialog = element<HTMLDialogElement>('[data-testid="agent-invite-dialog"]');
+  if (dialog?.open === true) dialog.close();
+}
+
+function openAgentInvite(): void {
+  const roomCode = network?.roomId;
+  const dialog = element<HTMLDialogElement>('[data-testid="agent-invite-dialog"]');
+  const prompt = element<HTMLTextAreaElement>('[data-testid="agent-invite-prompt"]');
+  const copyButton = element<HTMLButtonElement>('[data-testid="copy-agent-prompt"]');
+  if (roomCode === null || roomCode === undefined || dialog === null || prompt === null) return;
+
+  prompt.value = createAgentInvitePrompt(window.location.href, roomCode);
+  setText('[data-testid="agent-invite-copy-status"]', 'Ready to copy.');
+  if (copyButton !== null) copyButton.textContent = 'Copy prompt';
+  if (!dialog.open) dialog.showModal();
+  copyButton?.focus();
+}
+
+async function copyAgentInvitePrompt(): Promise<void> {
+  const prompt = element<HTMLTextAreaElement>('[data-testid="agent-invite-prompt"]');
+  const copyButton = element<HTMLButtonElement>('[data-testid="copy-agent-prompt"]');
+  if (prompt === null || prompt.value.length === 0) return;
+
+  if (await copy(prompt.value)) {
+    setText('[data-testid="agent-invite-copy-status"]', 'Prompt copied. Paste it into your agent.');
+    if (copyButton !== null) copyButton.textContent = 'Copied';
+    return;
+  }
+
+  prompt.focus();
+  prompt.select();
+  setText(
+    '[data-testid="agent-invite-copy-status"]',
+    'Clipboard unavailable. The prompt is selected; press Ctrl or Command + C.',
+  );
 }
 
 function avatarChoicesMarkup(): string {
@@ -242,7 +286,7 @@ function gameShell(): void {
       <header class="hud" aria-label="Game status">
         <div><span class="hud-label">YOU</span> <strong data-testid="local-player">Connecting…</strong></div>
         <div class="level-heading"><span class="hud-label" data-testid="level-indicator">LEVEL 1 OF 4</span> <strong data-testid="level-name">Pressure Lock</strong></div>
-        <div><span class="hud-label">ROOM</span> <code data-testid="hud-room-code">—</code> <button type="button" data-testid="copy-room-code">Copy code</button> <button type="button" data-testid="copy-invite">Copy invite</button></div>
+        <div class="room-cluster"><span class="hud-label">ROOM</span> <code data-testid="hud-room-code">—</code> <button type="button" data-testid="copy-room-code">Copy code</button> <button type="button" data-testid="copy-invite">Copy invite</button> <button type="button" data-testid="open-agent-invite" hidden>Invite agent</button></div>
         <div><span class="hud-label">PARTNER</span> <strong data-testid="partner-status">Waiting for seat 2</strong></div>
         <button class="icon-button" type="button" data-testid="mute-toggle" aria-pressed="false">Sound on</button>
         <button class="quiet-button" type="button" data-testid="return-to-lobby">Leave room</button>
@@ -252,6 +296,21 @@ function gameShell(): void {
         <span class="chat-popup-label" aria-hidden="true">Agent message</span>
         <p data-testid="chat-message"></p>
       </aside>
+      <dialog class="agent-invite-dialog" data-testid="agent-invite-dialog" aria-labelledby="agent-invite-title" aria-describedby="agent-invite-description agent-invite-copy-status">
+        <div class="agent-invite-panel">
+          <button class="agent-invite-close" type="button" data-testid="close-agent-invite-icon" aria-label="Close agent invitation">×</button>
+          <p class="eyebrow">Invite a WebMCP teammate</p>
+          <h2 id="agent-invite-title">Bring in Explorer 2</h2>
+          <p id="agent-invite-description">Copy this ready-made prompt into your agent. It already includes this website and room code.</p>
+          <label class="sr-only" for="agent-invite-prompt">Prompt for your agent</label>
+          <textarea id="agent-invite-prompt" data-testid="agent-invite-prompt" rows="8" readonly spellcheck="false"></textarea>
+          <div class="agent-invite-actions">
+            <button class="primary" type="button" data-testid="copy-agent-prompt">Copy prompt</button>
+            <button type="button" data-testid="close-agent-invite">Continue waiting</button>
+          </div>
+          <p class="agent-invite-copy-status" id="agent-invite-copy-status" data-testid="agent-invite-copy-status" role="status" aria-live="polite">Ready to copy.</p>
+        </div>
+      </dialog>
       <p id="game-help" class="sr-only">Puzzle facility. Click a destination to move your explorer. Coordinate movement-triggered controls with your partner and get both explorers to the exit.</p>
       <div id="facility-root" class="facility-root" role="application" aria-describedby="game-help" aria-label="The Coop puzzle facility"></div>
       <div class="asset-loading-overlay" data-testid="asset-loading-overlay" role="status" aria-live="polite">
@@ -278,6 +337,14 @@ function gameShell(): void {
     </main>`;
   element<HTMLButtonElement>('[data-testid="copy-room-code"]')?.addEventListener('click', () => { void copy(formatRoomCode()); });
   element<HTMLButtonElement>('[data-testid="copy-invite"]')?.addEventListener('click', () => { void copy(inviteUrl()); });
+  element<HTMLButtonElement>('[data-testid="open-agent-invite"]')?.addEventListener('click', openAgentInvite);
+  element<HTMLButtonElement>('[data-testid="copy-agent-prompt"]')?.addEventListener('click', () => { void copyAgentInvitePrompt(); });
+  element<HTMLButtonElement>('[data-testid="close-agent-invite"]')?.addEventListener('click', closeAgentInvite);
+  element<HTMLButtonElement>('[data-testid="close-agent-invite-icon"]')?.addEventListener('click', closeAgentInvite);
+  element<HTMLDialogElement>('[data-testid="agent-invite-dialog"]')?.addEventListener('close', () => {
+    const trigger = element<HTMLButtonElement>('[data-testid="open-agent-invite"]');
+    if (trigger !== null && !trigger.hidden && !trigger.disabled) trigger.focus();
+  });
   element<HTMLButtonElement>('[data-testid="mute-toggle"]')?.addEventListener('click', toggleMute);
   element<HTMLButtonElement>('[data-testid="return-to-lobby"]')?.addEventListener('click', returnToLobby);
   element<HTMLButtonElement>('[data-testid="back-to-lobby"]')?.addEventListener('click', returnToLobby);
@@ -348,14 +415,25 @@ function renderHud(): void {
   if (status === 'landing') return;
   const localSeat = network?.seat;
   const localPlayer = localSeat === null || localSeat === undefined ? 'Assigning seat…' : `Explorer ${localSeat + 1}`;
-  const partner = snapshot.players.find((player) => player.id !== network?.playerId);
-  const partnerStatus = partner === undefined ? 'Waiting for the second seat' : partner.connected ? 'Connected' : 'Reconnecting';
+  const partner = localSeat === 0
+    ? snapshot.players[1]
+    : localSeat === 1
+      ? snapshot.players[0]
+      : undefined;
+  const partnerHasJoined = partner?.connected === true || snapshot.phase !== 'waitingForPlayers';
+  const partnerStatus = !partnerHasJoined ? 'Waiting for the second seat' : partner?.connected === true ? 'Connected' : 'Reconnecting';
   const campaign = campaignPresentation(snapshot);
   setText('[data-testid="local-player"]', localPlayer);
   setText('[data-testid="level-indicator"]', campaign.levelIndicator);
   setText('[data-testid="level-name"]', snapshot.levelName);
   setText('[data-testid="hud-room-code"]', formatRoomCode());
   setText('[data-testid="partner-status"]', partnerStatus);
+  const agentInvite = element<HTMLButtonElement>('[data-testid="open-agent-invite"]');
+  if (agentInvite !== null) {
+    agentInvite.hidden = localSeat !== 0;
+    agentInvite.disabled = partnerHasJoined || network?.roomId === null;
+  }
+  if (partnerHasJoined || status === 'error' || status === 'abandoned') closeAgentInvite();
   const objective = snapshot.phase === 'completed'
     ? campaign.completionObjective
     : snapshot.phase === 'reconnectGrace'
@@ -462,6 +540,8 @@ async function startCreate(): Promise<void> {
   network = attemptedNetwork;
   try {
     await attemptedNetwork.create(selectedHumanJoinOptions());
+    if (!ownsBrowserLifecycle(lifecycleGeneration, network, generation, attemptedNetwork)) return;
+    openAgentInvite();
   } catch {
     showConnectionError(attemptedNetwork, generation);
   }

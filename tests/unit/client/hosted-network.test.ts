@@ -113,4 +113,35 @@ describe('HostedNetwork request contracts', () => {
 
     network.dispose();
   });
+
+  it('uses the hosted join endpoint for a WebMCP Player 2 session', async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify(sessionPayload(1)), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const events = connectionEvents();
+    const network = new HostedNetwork(events);
+
+    await network.joinAsPlayerTwo('room-1', {
+      roomMode: 'human-human',
+      controllerKind: 'human',
+      avatarId: 'character-female-e',
+    });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/rooms/room-1/join');
+    expect((fetchMock.mock.calls[0]?.[1] as RequestInit | undefined)?.body).toBe(JSON.stringify({
+      roomMode: 'human-human',
+      controllerKind: 'human',
+      avatarId: 'character-female-e',
+    }));
+    expect(network.roomId).toBe('room-1');
+    expect(network.playerId).toBe('player-2');
+    expect(network.seat).toBe(1);
+    expect(events.onSeat).toHaveBeenCalledWith(1);
+
+    network.dispose();
+  });
 });

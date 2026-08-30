@@ -123,13 +123,15 @@ export class HostedNetwork implements NetworkTransport {
   }
 
   async joinAsPlayerTwo(roomId: string, options?: JoinOptions): Promise<void> {
-    void roomId;
-    void options;
+    await this.join(roomId, options);
+    if (this.#seat === 1 && this.#playerId === 'player-2') return;
+
     const error = new HostedApiError(
-      400,
-      'hosted-mcp-unsupported',
-      'Hosted play currently supports a browser partner. Use the local app for the Codex teammate.',
+      409,
+      'player-two-unavailable',
+      'The hosted room did not assign Explorer 2.',
     );
+    this.dispose(true);
     this.#reportConnectError(error);
     throw error;
   }
