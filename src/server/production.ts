@@ -1,4 +1,4 @@
-import { createReadStream, realpathSync } from 'node:fs';
+import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import type {
   IncomingMessage,
@@ -7,7 +7,7 @@ import type {
   ServerResponse,
 } from 'node:http';
 import { extname, isAbsolute, relative, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import type { Server as ColyseusServer } from '@colyseus/core';
 import { createGameServer } from './index.ts';
 
@@ -208,44 +208,28 @@ export async function startProductionServer(
   return { gameServer, httpServer, hostname, port: boundPort, staticRoot };
 }
 
-export function isDirectModule(moduleUrl: string, argvPath: string | undefined): boolean {
-  if (argvPath === undefined) return false;
-  try {
-    return realpathSync(fileURLToPath(moduleUrl)) === realpathSync(argvPath);
-  } catch {
-    return moduleUrl === pathToFileURL(argvPath).href;
-  }
-}
-
-const isDirectEntry = isDirectModule(import.meta.url, process.argv[1]);
-if (isDirectEntry) {
-  const run = async (): Promise<void> => {
-    const running = await startProductionServer({
-      hostname: process.env.THE_COOP_HOST ?? DEFAULT_HOSTNAME,
-      port: parseProductionPort(process.env.THE_COOP_PORT),
-      ...(process.env.THE_COOP_STATIC_ROOT === undefined
-        ? {}
-        : { staticRoot: process.env.THE_COOP_STATIC_ROOT }),
-    });
-    console.log(`The Coop is listening on http://${running.hostname}:${running.port}`);
-
-    let shuttingDown = false;
-    const shutdown = (): void => {
-      if (shuttingDown) return;
-      shuttingDown = true;
-      void running.gameServer.gracefullyShutdown(false).then(
-        () => process.exit(0),
-        (error: unknown) => {
-          console.error(error);
-          process.exit(1);
-        },
-      );
-    };
-    process.once('SIGINT', shutdown);
-    process.once('SIGTERM', shutdown);
-  };
-  void run().catch((error: unknown) => {
-    console.error(error);
-    process.exitCode = 1;
+export async function runProductionServerFromEnvironment(): Promise<void> {
+  const running = await startProductionServer({
+    hostname: process.env.THE_COOP_HOST ?? DEFAULT_HOSTNAME,
+    port: parseProductionPort(process.env.THE_COOP_PORT),
+    ...(process.env.THE_COOP_STATIC_ROOT === undefined
+      ? {}
+      : { staticRoot: process.env.THE_COOP_STATIC_ROOT }),
   });
+  console.log(`The Coop is listening on http://${running.hostname}:${running.port}`);
+
+  let shuttingDown = false;
+  const shutdown = (): void => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    void running.gameServer.gracefullyShutdown(false).then(
+      () => process.exit(0),
+      (error: unknown) => {
+        console.error(error);
+        process.exit(1);
+      },
+    );
+  };
+  process.once('SIGINT', shutdown);
+  process.once('SIGTERM', shutdown);
 }

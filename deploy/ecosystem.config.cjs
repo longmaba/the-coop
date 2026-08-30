@@ -9,7 +9,7 @@ module.exports = {
     {
       name: 'the-coop',
       cwd: releaseDirectory,
-      script: 'src/server/production.ts',
+      script: 'src/server/run-production.ts',
       interpreter: process.env.THE_COOP_NODE_PATH ?? 'node',
       instances: 1,
       exec_mode: 'fork',

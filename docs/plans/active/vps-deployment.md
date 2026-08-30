@@ -90,9 +90,9 @@ Out of scope:
   need no client-visible secondary port or insecure mixed-content exception.
 - 2026-08-30: Use port 6000 because the user selected it for their existing
   Cloudflare Tunnel routing workflow.
-- 2026-08-30: Resolve both sides of the direct-entry comparison because PM2
-  launches through the `current` symlink while Node reports the immutable real
-  path; the first release exposed this distinction before opening the port.
+- 2026-08-30: Use a dedicated top-level runner because PM2 imports its target
+  through a process container instead of executing it as Node's direct entry;
+  the first two release attempts exposed this before opening the port.
 
 ## Validation
 

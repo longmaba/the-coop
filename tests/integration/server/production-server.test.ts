@@ -1,12 +1,10 @@
 import { Client, type Room } from '@colyseus/sdk';
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CoopStateSchema } from '../../../src/server/index.ts';
 import {
-  isDirectModule,
   parseProductionPort,
   startProductionServer,
   type RunningProductionServer,
@@ -56,29 +54,6 @@ describe('production server', () => {
     expect(parseProductionPort('4310')).toBe(4_310);
     expect(() => parseProductionPort('0')).toThrow(/between 1 and 65535/);
     expect(() => parseProductionPort('abc')).toThrow(/between 1 and 65535/);
-  });
-
-  it('recognizes the production module when invoked through its resolved path', () => {
-    expect(isDirectModule(import.meta.url, fileURLToPath(import.meta.url))).toBe(true);
-    expect(isDirectModule(import.meta.url, undefined)).toBe(false);
-  });
-
-  it('recognizes a PM2 entrypoint invoked through the current-release symlink', async () => {
-    const releaseDirectory = join(root, 'release');
-    const currentDirectory = join(root, 'current');
-    const modulePath = join(releaseDirectory, 'production.ts');
-    await mkdir(releaseDirectory);
-    await writeFile(modulePath, 'export {};');
-    await symlink(
-      releaseDirectory,
-      currentDirectory,
-      process.platform === 'win32' ? 'junction' : 'dir',
-    );
-
-    expect(isDirectModule(
-      pathToFileURL(modulePath).href,
-      join(currentDirectory, 'production.ts'),
-    )).toBe(true);
   });
 
   it('serves the SPA and immutable build assets without replacing missing assets with HTML', async () => {

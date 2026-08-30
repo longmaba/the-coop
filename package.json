@@ -11,7 +11,7 @@
     "dev:client": "vite --host 127.0.0.1 --port 5173 --strictPort",
     "dev:site": "vite --mode sites --host 127.0.0.1 --port 5174 --strictPort",
     "dev:server": "tsx watch src/server/index.ts",
-    "start:production": "node src/server/production.ts",
+    "start:production": "node src/server/run-production.ts",
     "clean:dist": "node scripts/clean-dist.mjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
