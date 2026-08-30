@@ -42,11 +42,13 @@ import {
 import type { WorldPoint } from '../../game/types.ts';
 import type { CoopSnapshot, RemotePlayer } from '../state.ts';
 import {
+  avatarLabel,
   cloneAvatarAsset,
   cloneEnvironmentAsset,
   getThreeAssetDiagnostics,
   normalizeAndGroundAvatar,
   preloadThreeAssets,
+  resolveAvatarAssetId,
   type AvatarAssetId,
   type EnvironmentAssetId,
 } from './assets.ts';
@@ -122,6 +124,11 @@ export interface FacilityRendererDiagnostics {
   }[];
   readonly mechanisms: number;
   readonly players: number;
+  readonly renderedPlayers: readonly {
+    readonly id: string;
+    readonly avatarId: AvatarAssetId;
+    readonly label: string;
+  }[];
   readonly renderer: {
     readonly calls: number;
     readonly triangles: number;
@@ -175,18 +182,29 @@ interface PlayerMaterialState {
 interface PlayerVisual {
   readonly id: string;
   readonly root: Group;
-  readonly model: Group;
-  readonly mixer: AnimationMixer;
-  readonly idleAction: AnimationAction | null;
-  readonly walkAction: AnimationAction | null;
+  avatarId: AvatarAssetId;
+  model: Group;
+  mixer: AnimationMixer;
+  idleAction: AnimationAction | null;
+  walkAction: AnimationAction | null;
   readonly localRing: Mesh<RingGeometry, MeshBasicMaterial>;
   readonly thresholdRing: Mesh<RingGeometry, MeshBasicMaterial>;
   readonly label: CSS2DObject;
-  readonly materialStates: readonly PlayerMaterialState[];
+  materialStates: readonly PlayerMaterialState[];
   drawX: number;
   drawY: number;
   initialized: boolean;
   activeClip: 'idle' | 'walk' | null;
+}
+
+interface PlayerModelState {
+  readonly avatarId: AvatarAssetId;
+  readonly model: Group;
+  readonly mixer: AnimationMixer;
+  readonly idleAction: AnimationAction | null;
+  readonly walkAction: AnimationAction | null;
+  readonly materialStates: readonly PlayerMaterialState[];
+  readonly activeClip: 'idle' | 'walk' | null;
 }
 
 interface SignalVisual {
@@ -292,6 +310,55 @@ function clonePlayerMaterials(root: Object3D): PlayerMaterialState[] {
 
 function disposeMaterial(material: Material): void {
   material.dispose();
+}
+
+function createPlayerModel(
+  avatarId: AvatarAssetId,
+  preferredClip: 'idle' | 'walk' | null,
+): PlayerModelState {
+  const clone = cloneAvatarAsset(avatarId);
+  normalizeAndGroundAvatar(clone.root, PLAYER_HEIGHT);
+  setObjectShadows(clone.root, true, false);
+  const materialStates = clonePlayerMaterials(clone.root);
+
+  const mixer = new AnimationMixer(clone.root);
+  const idleClip = clone.animations.find(({ name }) => name === 'idle');
+  const walkClip = clone.animations.find(({ name }) => name === 'walk');
+  const idleAction = idleClip === undefined ? null : mixer.clipAction(idleClip);
+  const walkAction = walkClip === undefined ? null : mixer.clipAction(walkClip);
+
+  const activeClip = preferredClip === 'walk' && walkAction !== null
+    ? 'walk'
+    : idleAction !== null
+      ? 'idle'
+      : walkAction !== null
+        ? 'walk'
+        : null;
+
+  if (activeClip === 'walk') {
+    walkAction?.play();
+  } else if (activeClip === 'idle') {
+    idleAction?.play();
+  }
+
+  return {
+    avatarId,
+    model: clone.root,
+    mixer,
+    idleAction,
+    walkAction,
+    materialStates,
+    activeClip,
+  };
+}
+
+function disposePlayerModel(model: PlayerModelState | PlayerVisual): void {
+  model.mixer.stopAllAction();
+  for (const state of model.materialStates) disposeMaterial(state.material);
+}
+
+export function renderedAvatarIdForPlayer(player: RemotePlayer): AvatarAssetId {
+  return resolveAvatarAssetId(player.avatarId, player.id);
 }
 
 function matrixForPlacement(placement: AssetPlacement): Matrix4 {
@@ -483,6 +550,13 @@ export class FacilityRenderer {
       })),
       mechanisms: plan?.mechanisms.length ?? 0,
       players: this.#players.size,
+      renderedPlayers: Array.from(this.#players.values())
+        .filter((player) => player.root.visible)
+        .map((player) => ({
+          id: player.id,
+          avatarId: player.avatarId,
+          label: avatarLabel(player.avatarId),
+        })),
       renderer: {
         calls: rendererInfo?.render.calls ?? 0,
         triangles: rendererInfo?.render.triangles ?? 0,
@@ -504,13 +578,12 @@ export class FacilityRenderer {
 
     this.#disposeLevel();
     for (const visual of this.#players.values()) {
-      visual.mixer.stopAllAction();
       visual.label.element.remove();
       visual.localRing.geometry.dispose();
       visual.localRing.material.dispose();
       visual.thresholdRing.geometry.dispose();
       visual.thresholdRing.material.dispose();
-      for (const state of visual.materialStates) disposeMaterial(state.material);
+      disposePlayerModel(visual);
     }
     this.#players.clear();
     for (const geometry of this.#persistentGeometries) geometry.dispose();
@@ -1177,16 +1250,16 @@ export class FacilityRenderer {
   }
 
   #ensurePlayer(player: RemotePlayer): PlayerVisual {
+    const assetId = renderedAvatarIdForPlayer(player);
     const existing = this.#players.get(player.id);
-    if (existing !== undefined) return existing;
-    const assetId: AvatarAssetId = player.id === 'player-1' ? 'lion' : 'penguin';
-    const clone = cloneAvatarAsset(assetId);
-    normalizeAndGroundAvatar(clone.root, PLAYER_HEIGHT);
-    setObjectShadows(clone.root, true, false);
-    const materialStates = clonePlayerMaterials(clone.root);
+    if (existing !== undefined) {
+      if (existing.avatarId !== assetId) this.#replacePlayerAvatar(existing, assetId);
+      return existing;
+    }
+    const modelState = createPlayerModel(assetId, 'idle');
 
     const wrapper = new Group();
-    wrapper.add(clone.root);
+    wrapper.add(modelState.model);
     const localRing = new Mesh(
       new RingGeometry(1.08, 1.22, 32),
       new MeshBasicMaterial({
@@ -1221,33 +1294,42 @@ export class FacilityRenderer {
     );
     label.position.set(0, PLAYER_HEIGHT + 2, 0);
     wrapper.add(label);
-
-    const mixer = new AnimationMixer(clone.root);
-    const idleClip = clone.animations.find(({ name }) => name === 'idle');
-    const walkClip = clone.animations.find(({ name }) => name === 'walk');
-    const idleAction = idleClip === undefined ? null : mixer.clipAction(idleClip);
-    const walkAction = walkClip === undefined ? null : mixer.clipAction(walkClip);
-    idleAction?.play();
     this.#playerRoot.add(wrapper);
 
     const visual: PlayerVisual = {
       id: player.id,
+      avatarId: modelState.avatarId,
       root: wrapper,
-      model: clone.root,
-      mixer,
-      idleAction,
-      walkAction,
+      model: modelState.model,
+      mixer: modelState.mixer,
+      idleAction: modelState.idleAction,
+      walkAction: modelState.walkAction,
       localRing,
       thresholdRing,
       label,
-      materialStates,
+      materialStates: modelState.materialStates,
       drawX: player.worldX,
       drawY: player.worldY,
       initialized: false,
-      activeClip: idleAction === null ? null : 'idle',
+      activeClip: modelState.activeClip,
     };
     this.#players.set(player.id, visual);
     return visual;
+  }
+
+  #replacePlayerAvatar(visual: PlayerVisual, avatarId: AvatarAssetId): void {
+    if (visual.avatarId === avatarId) return;
+    const nextModel = createPlayerModel(avatarId, visual.activeClip);
+    visual.root.remove(visual.model);
+    disposePlayerModel(visual);
+    visual.root.add(nextModel.model);
+    visual.avatarId = nextModel.avatarId;
+    visual.model = nextModel.model;
+    visual.mixer = nextModel.mixer;
+    visual.idleAction = nextModel.idleAction;
+    visual.walkAction = nextModel.walkAction;
+    visual.materialStates = nextModel.materialStates;
+    visual.activeClip = nextModel.activeClip;
   }
 
   #synchronizePlayers(

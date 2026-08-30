@@ -1,15 +1,48 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AVATAR_IDS,
   createLevelInspection,
+  defaultAvatarIdForSeat,
+  parseAvatarId,
   parseJoinOptions,
   resolveInspectionTarget,
 } from '../../../src/game/index.ts';
 
 describe('shared room join contracts', () => {
+  it('locks the shared avatar catalog, defaults, and strict optional join avatars', () => {
+    expect(AVATAR_IDS).toEqual([
+      'character-female-a',
+      'character-female-b',
+      'character-female-c',
+      'character-female-d',
+      'character-female-e',
+      'character-female-f',
+      'character-male-a',
+      'character-male-b',
+      'character-male-c',
+      'character-male-d',
+      'character-male-e',
+      'character-male-f',
+    ]);
+    expect(parseAvatarId('character-male-f')).toBe('character-male-f');
+    expect(parseAvatarId('lion')).toBeNull();
+    expect(defaultAvatarIdForSeat(0)).toBe('character-female-a');
+    expect(defaultAvatarIdForSeat(1)).toBe('character-male-a');
+  });
+
   it('preserves empty human-human joins and accepts only role-bound human-AI joins', () => {
     expect(parseJoinOptions({})).toEqual({
       roomMode: 'human-human',
       controllerKind: 'human',
+    });
+    expect(parseJoinOptions({
+      roomMode: 'human-human',
+      controllerKind: 'human',
+      avatarId: 'character-male-c',
+    })).toEqual({
+      roomMode: 'human-human',
+      controllerKind: 'human',
+      avatarId: 'character-male-c',
     });
     expect(parseJoinOptions({
       roomMode: 'human-ai',
@@ -17,14 +50,21 @@ describe('shared room join contracts', () => {
       playerId: 'player-2',
       pairingTokenHash: 'a'.repeat(64),
       pairingExpiresAt: 123,
+      avatarId: 'character-female-d',
     })).not.toBeNull();
     expect(parseJoinOptions({
       roomMode: 'human-ai',
       controllerKind: 'human',
       playerId: 'player-1',
       pairingToken: 'a'.repeat(43),
+      avatarId: 'character-male-e',
     })).not.toBeNull();
 
+    expect(parseJoinOptions({
+      roomMode: 'human-human',
+      controllerKind: 'human',
+      avatarId: 'lion',
+    })).toBeNull();
     expect(parseJoinOptions({
       roomMode: 'human-ai',
       controllerKind: 'mcp',

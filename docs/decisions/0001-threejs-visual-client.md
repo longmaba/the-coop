@@ -24,8 +24,8 @@ target-command bridge.
   convert through one exact world-to-scene transform.
 - The camera is a true-isometric orthographic view at approximately 35.264
   degrees elevation above the ground plane and 45 degrees azimuth.
-- Explorer 1 renders as the supplied Lion and Explorer 2 as the supplied
-  Penguin.
+- Player models render from the authoritative snapshot avatar ID, using the
+  selectable human-character contract in Decision 0003.
 - Missing mechanisms reuse the supplied floor-layer model with restrained
   emissive geometry and no more than four active point lights.
 - Asset readiness gates room creation or joining, and the client does not keep
@@ -77,3 +77,7 @@ changes the authoritative layouts to 16 by 16 and restores the true-isometric
 35.264-degree elevation and 45-degree azimuth. This amendment changes layout
 coordinates and presentation only; cooperative mechanic order, server
 authority, and MCP ownership remain intact.
+
+On 2026-08-30, Decision 0003 superseded only the fixed Lion/Penguin binding.
+The Three.js presentation boundary, camera, coordinate transform, server
+authority, and fail-closed asset readiness remain unchanged.

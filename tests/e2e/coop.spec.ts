@@ -9,6 +9,7 @@ interface BridgeState {
   levelEpoch: number;
   players: Array<{
     id: string;
+    avatarId: string;
     connected: boolean;
     worldX: number;
     worldY: number;
@@ -27,6 +28,11 @@ interface Diagnostics {
     cameraElevation: number;
     cameraAzimuth: number;
     canvasCount: number;
+    renderedPlayers: Array<{
+      id: string;
+      avatarId: string;
+      label: string;
+    }>;
     gateAnimations: Array<{
       time: number;
       duration: number;
@@ -91,11 +97,24 @@ function collectPageErrors(page: Page, errors: string[]): void {
   });
 }
 
-async function joinSecondSeat(browser: Browser, id: string, errors: string[]): Promise<{ page: Page; close: () => Promise<void> }> {
+async function selectAvatar(page: Page, avatarId: string): Promise<void> {
+  await page.getByTestId(`avatar-option-${avatarId}`).check();
+}
+
+async function joinSecondSeat(
+  browser: Browser,
+  id: string,
+  errors: string[],
+  avatarId = 'character-male-e',
+): Promise<{ page: Page; close: () => Promise<void> }> {
   const context = await browser.newContext();
   const page = await context.newPage();
   collectPageErrors(page, errors);
   await page.goto(`/?room=${encodeURIComponent(id)}&e2e=1`);
+  await expect(page.getByTestId('landing-shell')).toBeVisible();
+  await expect(page.getByTestId('room-code-input')).toHaveValue(id);
+  await selectAvatar(page, avatarId);
+  await page.getByTestId('join-room').click();
   await expect(page.getByTestId('game-shell')).toBeVisible();
   await waitForState(page, 'second player to enter the match', (state) =>
     state.phase === 'playing' && state.players.length === 2);
@@ -108,6 +127,7 @@ async function verifyThirdSeatRejected(browser: Browser, id: string): Promise<vo
   try {
     await page.goto(`/?room=${encodeURIComponent(id)}&e2e=1`);
     await expect(page.getByTestId('landing-shell')).toBeVisible();
+    await page.getByTestId('join-room').click();
     await expect(page.getByTestId('room-error')).not.toHaveText('');
   } finally {
     await context.close();
@@ -308,6 +328,8 @@ test('browser WebMCP joins as Player 2, observes safely, and confirms arrival', 
     await agentPage.waitForFunction(() =>
       Object.keys((window as Window & { __WEBMCP_TOOLS__?: Record<string, BrowserSiteTool> })
         .__WEBMCP_TOOLS__ ?? {}).length === 4);
+    await selectAvatar(agentPage, 'character-male-f');
+    await expect(agentPage.getByTestId('selected-avatar-name')).toHaveText('Explorer L');
     const missingRoomError = await agentPage.evaluate(async () => {
       try {
         await (window as Window & { __WEBMCP_TOOLS__?: Record<string, BrowserSiteTool> })
@@ -336,6 +358,9 @@ test('browser WebMCP joins as Player 2, observes safely, and confirms arrival', 
       joined: { joined: true, roomId: id, playerId: 'player-2' },
       concurrentError: 'join_game is available only from an unseated landing page.',
     });
+    await waitForState(agentPage, 'WebMCP avatar selection to reach the room snapshot', (state) =>
+      state.players.some((player) =>
+        player.id === 'player-2' && player.avatarId === 'character-male-f'));
 
     const observed = await agentPage.evaluate(async () =>
       (window as Window & { __WEBMCP_TOOLS__?: Record<string, BrowserSiteTool> })
@@ -401,6 +426,8 @@ test('two isolated clients solve, reconnect, and restart the authoritative puzzl
 
   await page.goto('/?e2e=1');
   await expect(page.getByRole('heading', { name: 'THE COOP' })).toBeVisible();
+  await selectAvatar(page, 'character-female-c');
+  await expect(page.getByTestId('selected-avatar-name')).toHaveText('Explorer C');
   await page.getByTestId('create-room').click();
   await expect(page.getByTestId('game-shell')).toBeVisible();
   await page.waitForFunction(() =>
@@ -422,6 +449,22 @@ test('two isolated clients solve, reconnect, and restart the authoritative puzzl
   try {
     await waitForState(page, 'first player to enter the match', (state) =>
       state.phase === 'playing' && state.players.length === 2);
+    const avatars = await page.evaluate(() =>
+      (window as Window & { __THE_COOP_E2E__?: Diagnostics })
+        .__THE_COOP_E2E__?.state.players.map(({ id: playerId, avatarId }) => ({ playerId, avatarId })));
+    expect(avatars).toEqual([
+      { playerId: 'player-1', avatarId: 'character-female-c' },
+      { playerId: 'player-2', avatarId: 'character-male-e' },
+    ]);
+    await page.waitForFunction(() =>
+      (window as Window & { __THE_COOP_E2E__?: Diagnostics })
+        .__THE_COOP_E2E__?.renderer?.renderedPlayers.length === 2);
+    expect(await page.evaluate(() =>
+      (window as Window & { __THE_COOP_E2E__?: Diagnostics })
+        .__THE_COOP_E2E__?.renderer?.renderedPlayers)).toEqual([
+      { id: 'player-1', avatarId: 'character-female-c', label: 'Explorer C' },
+      { id: 'player-2', avatarId: 'character-male-e', label: 'Explorer K' },
+    ]);
     await expect(page.getByTestId('local-player')).toHaveText('Explorer 1');
     await expect(second.page.getByTestId('local-player')).toHaveText('Explorer 2');
 
@@ -451,6 +494,9 @@ test('two isolated clients solve, reconnect, and restart the authoritative puzzl
     originalPlayerId);
     expect(await page.evaluate(() =>
       (window as Window & { __THE_COOP_E2E__?: Diagnostics }).__THE_COOP_E2E__?.playerId)).toBe(originalPlayerId);
+    expect(await page.evaluate(() =>
+      (window as Window & { __THE_COOP_E2E__?: Diagnostics })
+        .__THE_COOP_E2E__?.state.players[0]?.avatarId)).toBe('character-female-c');
     await page.waitForFunction(() => {
       const gates = (window as Window & { __THE_COOP_E2E__?: Diagnostics })
         .__THE_COOP_E2E__?.renderer?.gateAnimations;

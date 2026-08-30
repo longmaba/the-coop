@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CELL_SIZE } from '../../../src/game/index.ts';
+import { defaultAvatarIdForSeat } from '../../../src/game/index.ts';
 import { HostedGameService } from '../../../src/hosted/service.ts';
 import type {
   HostedRoomRecord,
@@ -65,20 +66,40 @@ function harness() {
 describe('HostedGameService', () => {
   it('creates, joins, and advances the existing authoritative simulation', async () => {
     const runtime = harness();
-    const creator = await runtime.service.createRoom();
+    const creator = await runtime.service.createRoom({
+      roomMode: 'human-human',
+      controllerKind: 'human',
+      avatarId: 'character-male-c',
+    });
     expect(creator).toMatchObject({
       roomId: 'room-code-0001',
       playerId: 'player-1',
       seat: 0,
-      snapshot: { phase: 'waitingForPlayers' },
+      snapshot: {
+        phase: 'waitingForPlayers',
+        players: [
+          { avatarId: 'character-male-c' },
+          { avatarId: defaultAvatarIdForSeat(1) },
+        ],
+      },
     });
 
-    const guest = await runtime.service.joinRoom(creator.roomId);
+    const guest = await runtime.service.joinRoom(creator.roomId, {
+      roomMode: 'human-human',
+      controllerKind: 'human',
+      avatarId: 'character-female-d',
+    });
     expect(guest).toMatchObject({
       roomId: creator.roomId,
       playerId: 'player-2',
       seat: 1,
-      snapshot: { phase: 'playing' },
+      snapshot: {
+        phase: 'playing',
+        players: [
+          { avatarId: 'character-male-c' },
+          { avatarId: 'character-female-d' },
+        ],
+      },
     });
 
     const move = await runtime.service.move(creator.roomId, creator.token, {
@@ -152,5 +173,76 @@ describe('HostedGameService', () => {
       status: 401,
       code: 'invalid-seat',
     });
+  });
+
+  it('fails closed on invalid avatar ids and hydrates legacy saved records', async () => {
+    const runtime = harness();
+    await expect(runtime.service.createRoom({
+      roomMode: 'human-human',
+      controllerKind: 'human',
+      avatarId: 'lion',
+    })).rejects.toMatchObject({
+      status: 400,
+      code: 'invalid-request',
+    });
+
+    runtime.store.records.set('legacy-room', {
+      roomId: 'legacy-room',
+      revision: 0,
+      simulatedAtMs: 0,
+      updatedAtMs: 0,
+      playerOneTokenHash: 'hash:legacy-player-one-token-000000000000',
+      playerOneLastSeenMs: 0,
+      playerTwoTokenHash: 'hash:legacy-player-two-token-000000000000',
+      playerTwoLastSeenMs: 0,
+      gameState: {
+        levelId: 'level_1',
+        levelEpoch: 0,
+        phase: 'playing',
+        resumePhase: null,
+        tick: 0,
+        elapsedSeconds: 0,
+        reconnectElapsedSeconds: 0,
+        players: [
+          {
+            id: 'player-1',
+            connected: true,
+            spawn: { x: 168, y: 312 },
+            position: { x: 168, y: 312 },
+            lastMoveSeq: -1,
+            route: [],
+            routeKind: 'none',
+            crossingPermit: false,
+            blockedTeleporterPadId: null,
+          },
+          {
+            id: 'player-2',
+            avatarId: 'lion',
+            connected: true,
+            spawn: { x: 168, y: 504 },
+            position: { x: 168, y: 504 },
+            lastMoveSeq: -1,
+            route: [],
+            routeKind: 'none',
+            crossingPermit: false,
+            blockedTeleporterPadId: null,
+          },
+        ],
+        doorOpen: false,
+        collectedKeycardIds: [],
+        latchedGateIds: [],
+        completedAtTick: null,
+        restartSeq: -1,
+      } as unknown as HostedRoomRecord['gameState'],
+    });
+
+    const hydrated = await runtime.service.getState(
+      'legacy-room',
+      'legacy-player-one-token-000000000000',
+    );
+    expect(hydrated.snapshot.players.map(({ avatarId }) => avatarId)).toEqual([
+      defaultAvatarIdForSeat(0),
+      defaultAvatarIdForSeat(1),
+    ]);
   });
 });

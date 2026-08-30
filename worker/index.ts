@@ -56,6 +56,34 @@ async function requestObject(request: Request): Promise<Record<string, unknown>>
   return value as Record<string, unknown>;
 }
 
+async function optionalRequestObject(request: Request): Promise<Record<string, unknown> | undefined> {
+  const declaredLength = Number(request.headers.get('content-length') ?? 0);
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_COMMAND_BYTES) {
+    throw new HostedServiceError(413, 'request-too-large', 'The request is too large.');
+  }
+  const body = await request.text();
+  if (new TextEncoder().encode(body).byteLength > MAX_COMMAND_BYTES) {
+    throw new HostedServiceError(413, 'request-too-large', 'The request is too large.');
+  }
+  if (body.length === 0) return undefined;
+
+  const contentType = request.headers.get('content-type') ?? '';
+  if (!contentType.toLowerCase().startsWith('application/json')) {
+    throw new HostedServiceError(415, 'invalid-content-type', 'Expected a JSON request.');
+  }
+
+  let value: unknown;
+  try {
+    value = JSON.parse(body);
+  } catch {
+    throw new HostedServiceError(400, 'invalid-json', 'Expected a valid JSON request.');
+  }
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new HostedServiceError(400, 'invalid-request', 'The request is invalid.');
+  }
+  return value as Record<string, unknown>;
+}
+
 async function ensureSchemaOnce(database: D1Database): Promise<void> {
   schemaReady ??= ensureHostedSchema(database).catch((error: unknown) => {
     schemaReady = null;
@@ -71,7 +99,7 @@ async function handleRoomsApi(request: Request, env: Env): Promise<Response> {
   const segments = url.pathname.split('/').filter(Boolean);
 
   if (segments.length === 2 && request.method === 'POST') {
-    return json(await service.createRoom(), 201);
+    return json(await service.createRoom(await optionalRequestObject(request)), 201);
   }
   if (segments.length !== 4 || segments[0] !== 'api' || segments[1] !== 'rooms') {
     throw new HostedServiceError(404, 'not-found', 'The requested endpoint does not exist.');
@@ -80,7 +108,7 @@ async function handleRoomsApi(request: Request, env: Env): Promise<Response> {
   const roomId = decodeURIComponent(segments[2] ?? '');
   const action = segments[3];
   if (action === 'join' && request.method === 'POST') {
-    return json(await service.joinRoom(roomId));
+    return json(await service.joinRoom(roomId, await optionalRequestObject(request)));
   }
 
   const token = bearerToken(request);

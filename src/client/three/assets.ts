@@ -8,9 +8,20 @@ import {
 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
-import characterColormapUrl from '../../../assets/characters/Textures/colormap.png?url';
-import lionUrl from '../../../assets/characters/animal-lion.glb?url';
-import penguinUrl from '../../../assets/characters/animal-penguin.glb?url';
+import { AVATAR_IDS, type AvatarId } from '../../game/index.ts';
+import characterColormapUrl from '../../../assets/new_characters/Textures/colormap.png?url';
+import characterFemaleAUrl from '../../../assets/new_characters/character-female-a.glb?url';
+import characterFemaleBUrl from '../../../assets/new_characters/character-female-b.glb?url';
+import characterFemaleCUrl from '../../../assets/new_characters/character-female-c.glb?url';
+import characterFemaleDUrl from '../../../assets/new_characters/character-female-d.glb?url';
+import characterFemaleEUrl from '../../../assets/new_characters/character-female-e.glb?url';
+import characterFemaleFUrl from '../../../assets/new_characters/character-female-f.glb?url';
+import characterMaleAUrl from '../../../assets/new_characters/character-male-a.glb?url';
+import characterMaleBUrl from '../../../assets/new_characters/character-male-b.glb?url';
+import characterMaleCUrl from '../../../assets/new_characters/character-male-c.glb?url';
+import characterMaleDUrl from '../../../assets/new_characters/character-male-d.glb?url';
+import characterMaleEUrl from '../../../assets/new_characters/character-male-e.glb?url';
+import characterMaleFUrl from '../../../assets/new_characters/character-male-f.glb?url';
 import environmentColormapUrl from '../../../assets/GLB format/Textures/colormap.png?url';
 import gateDoorUrl from '../../../assets/GLB format/gate-door.glb?url';
 import floorDetailUrl from '../../../assets/GLB format/template-floor-detail-a.glb?url';
@@ -34,15 +45,17 @@ export const ENVIRONMENT_ASSET_IDS = Object.freeze([
   'gateDoor',
 ] as const);
 
-export const AVATAR_ASSET_IDS = Object.freeze([
-  'lion',
-  'penguin',
-] as const);
+export const AVATAR_ASSET_IDS = AVATAR_IDS;
 
 export type EnvironmentAssetId = (typeof ENVIRONMENT_ASSET_IDS)[number];
-export type AvatarAssetId = (typeof AVATAR_ASSET_IDS)[number];
+export type AvatarAssetId = AvatarId;
 export type ThreeAssetId = EnvironmentAssetId | AvatarAssetId;
 export type AssetPack = 'environment' | 'characters';
+
+export interface AvatarCatalogEntry {
+  readonly id: AvatarAssetId;
+  readonly label: string;
+}
 
 export interface AssetDiagnostics {
   readonly id: ThreeAssetId;
@@ -86,6 +99,30 @@ const THREE_ASSET_IDS: readonly ThreeAssetId[] = Object.freeze([
   ...AVATAR_ASSET_IDS,
 ]);
 
+const AVATAR_DETAILS = Object.freeze({
+  'character-female-a': Object.freeze({ label: 'Explorer A', sourceUrl: characterFemaleAUrl }),
+  'character-female-b': Object.freeze({ label: 'Explorer B', sourceUrl: characterFemaleBUrl }),
+  'character-female-c': Object.freeze({ label: 'Explorer C', sourceUrl: characterFemaleCUrl }),
+  'character-female-d': Object.freeze({ label: 'Explorer D', sourceUrl: characterFemaleDUrl }),
+  'character-female-e': Object.freeze({ label: 'Explorer E', sourceUrl: characterFemaleEUrl }),
+  'character-female-f': Object.freeze({ label: 'Explorer F', sourceUrl: characterFemaleFUrl }),
+  'character-male-a': Object.freeze({ label: 'Explorer G', sourceUrl: characterMaleAUrl }),
+  'character-male-b': Object.freeze({ label: 'Explorer H', sourceUrl: characterMaleBUrl }),
+  'character-male-c': Object.freeze({ label: 'Explorer I', sourceUrl: characterMaleCUrl }),
+  'character-male-d': Object.freeze({ label: 'Explorer J', sourceUrl: characterMaleDUrl }),
+  'character-male-e': Object.freeze({ label: 'Explorer K', sourceUrl: characterMaleEUrl }),
+  'character-male-f': Object.freeze({ label: 'Explorer L', sourceUrl: characterMaleFUrl }),
+} satisfies Readonly<Record<AvatarAssetId, { readonly label: string; readonly sourceUrl: string }>>);
+
+const AVATAR_ID_SET = new Set<string>(AVATAR_ASSET_IDS);
+
+export const AVATAR_CATALOG: readonly AvatarCatalogEntry[] = Object.freeze(
+  AVATAR_ASSET_IDS.map((id) => Object.freeze({
+    id,
+    label: AVATAR_DETAILS[id].label,
+  })),
+);
+
 const ASSET_DEFINITIONS = Object.freeze({
   floor: Object.freeze({ pack: 'environment', sourceUrl: floorUrl }),
   floorDetail: Object.freeze({ pack: 'environment', sourceUrl: floorDetailUrl }),
@@ -96,8 +133,18 @@ const ASSET_DEFINITIONS = Object.freeze({
   wallDetail: Object.freeze({ pack: 'environment', sourceUrl: wallDetailUrl }),
   wallTop: Object.freeze({ pack: 'environment', sourceUrl: wallTopUrl }),
   gateDoor: Object.freeze({ pack: 'environment', sourceUrl: gateDoorUrl }),
-  lion: Object.freeze({ pack: 'characters', sourceUrl: lionUrl }),
-  penguin: Object.freeze({ pack: 'characters', sourceUrl: penguinUrl }),
+  'character-female-a': Object.freeze({ pack: 'characters', sourceUrl: characterFemaleAUrl }),
+  'character-female-b': Object.freeze({ pack: 'characters', sourceUrl: characterFemaleBUrl }),
+  'character-female-c': Object.freeze({ pack: 'characters', sourceUrl: characterFemaleCUrl }),
+  'character-female-d': Object.freeze({ pack: 'characters', sourceUrl: characterFemaleDUrl }),
+  'character-female-e': Object.freeze({ pack: 'characters', sourceUrl: characterFemaleEUrl }),
+  'character-female-f': Object.freeze({ pack: 'characters', sourceUrl: characterFemaleFUrl }),
+  'character-male-a': Object.freeze({ pack: 'characters', sourceUrl: characterMaleAUrl }),
+  'character-male-b': Object.freeze({ pack: 'characters', sourceUrl: characterMaleBUrl }),
+  'character-male-c': Object.freeze({ pack: 'characters', sourceUrl: characterMaleCUrl }),
+  'character-male-d': Object.freeze({ pack: 'characters', sourceUrl: characterMaleDUrl }),
+  'character-male-e': Object.freeze({ pack: 'characters', sourceUrl: characterMaleEUrl }),
+  'character-male-f': Object.freeze({ pack: 'characters', sourceUrl: characterMaleFUrl }),
 } satisfies Readonly<Record<ThreeAssetId, AssetDefinition>>);
 
 const COLORMAP_URLS: Readonly<Record<AssetPack, string>> = Object.freeze({
@@ -218,6 +265,25 @@ export function cloneEnvironmentAsset(id: EnvironmentAssetId): LoadedAssetClone 
 
 export function cloneAvatarAsset(id: AvatarAssetId): LoadedAssetClone {
   return cloneTemplate(id);
+}
+
+export function isAvatarAssetId(value: unknown): value is AvatarAssetId {
+  return typeof value === 'string' && AVATAR_ID_SET.has(value);
+}
+
+export function avatarLabel(id: AvatarAssetId): string {
+  return AVATAR_DETAILS[id].label;
+}
+
+export function defaultAvatarAssetIdForPlayerId(playerId: string | null | undefined): AvatarAssetId {
+  return playerId === 'player-2' ? 'character-male-a' : 'character-female-a';
+}
+
+export function resolveAvatarAssetId(
+  value: unknown,
+  playerId?: string | null,
+): AvatarAssetId {
+  return isAvatarAssetId(value) ? value : defaultAvatarAssetIdForPlayerId(playerId);
 }
 
 export function getThreeAssetDiagnostics(): readonly AssetDiagnostics[] {

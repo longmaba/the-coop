@@ -16,6 +16,7 @@ import type { LevelDefinition, TeleporterDefinition } from './level.ts';
 import { findPath } from './pathfinding.ts';
 import type {
   AdvanceEvent,
+  AvatarId,
   GameState,
   GateId,
   LevelId,
@@ -30,6 +31,10 @@ import type {
   TeleporterPadId,
   WorldPoint,
 } from './types.ts';
+import {
+  defaultAvatarIdForSeat,
+  normalizeAvatarId,
+} from './types.ts';
 
 const clonePoint = (point: WorldPoint): WorldPoint => ({ x: point.x, y: point.y });
 
@@ -38,10 +43,12 @@ function initialPlayer(
   spawnIndex: 0 | 1,
   connected: boolean,
   level: LevelDefinition,
+  avatarId = defaultAvatarIdForSeat(spawnIndex),
 ): PlayerState {
   const spawn = gridToWorld(level.playerSpawns[spawnIndex]);
   return {
     id,
+    avatarId,
     connected,
     spawn,
     position: clonePoint(spawn),
@@ -72,12 +79,25 @@ export function createGameState(
   playerIds: readonly [string, string],
   connected = true,
   levelId: LevelId = LEVEL_ONE.id,
+  avatarIds?: readonly [AvatarId | undefined, AvatarId | undefined],
 ): GameState {
   if (playerIds[0] === playerIds[1]) throw new Error('Two distinct player ids are required.');
   const level = getLevelDefinition(levelId);
   const players: [PlayerState, PlayerState] = [
-    initialPlayer(playerIds[0], 0, connected, level),
-    initialPlayer(playerIds[1], 1, connected, level),
+    initialPlayer(
+      playerIds[0],
+      0,
+      connected,
+      level,
+      normalizeAvatarId(avatarIds?.[0], playerIds[0], 0),
+    ),
+    initialPlayer(
+      playerIds[1],
+      1,
+      connected,
+      level,
+      normalizeAvatarId(avatarIds?.[1], playerIds[1], 1),
+    ),
   ];
   return {
     levelId,
@@ -480,6 +500,39 @@ export function setPlayerConnected(
         };
 }
 
+export function setPlayerAvatarId(
+  state: GameState,
+  playerId: string,
+  avatarId: AvatarId,
+): GameState {
+  const index = state.players[0].id === playerId
+    ? 0
+    : state.players[1].id === playerId
+      ? 1
+      : null;
+  if (index === null || state.players[index].avatarId === avatarId) return state;
+  return replacePlayer(
+    state,
+    index,
+    copyPlayer(state.players[index], { avatarId }),
+  );
+}
+
+export function hydrateGameStateAvatarIds(state: GameState): GameState {
+  const first = normalizeAvatarId(state.players[0]?.avatarId, state.players[0]?.id ?? 'player-1', 0);
+  const second = normalizeAvatarId(state.players[1]?.avatarId, state.players[1]?.id ?? 'player-2', 1);
+  if (state.players[0]?.avatarId === first && state.players[1]?.avatarId === second) {
+    return state;
+  }
+  return {
+    ...state,
+    players: [
+      copyPlayer(state.players[0], { avatarId: first }),
+      copyPlayer(state.players[1], { avatarId: second }),
+    ],
+  };
+}
+
 function transitionLevel(
   state: GameState,
   command: RestartCommand,
@@ -497,8 +550,20 @@ function transitionLevel(
 
   const level = getLevelDefinition(levelId);
   const players: [PlayerState, PlayerState] = [
-    initialPlayer(state.players[0].id, 0, state.players[0].connected, level),
-    initialPlayer(state.players[1].id, 1, state.players[1].connected, level),
+    initialPlayer(
+      state.players[0].id,
+      0,
+      state.players[0].connected,
+      level,
+      state.players[0].avatarId,
+    ),
+    initialPlayer(
+      state.players[1].id,
+      1,
+      state.players[1].connected,
+      level,
+      state.players[1].avatarId,
+    ),
   ];
   const next: GameState = {
     ...state,
@@ -571,6 +636,7 @@ export function restartGame(
 function projectPlayer(player: PlayerState): NetworkPlayerState {
   return {
     id: player.id,
+    avatarId: player.avatarId,
     connected: player.connected,
     worldX: player.position.x,
     worldY: player.position.y,

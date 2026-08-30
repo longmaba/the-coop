@@ -1,4 +1,4 @@
-import type { GameState } from '../src/game/index.ts';
+import { hydrateGameStateAvatarIds, type GameState } from '../src/game/index.ts';
 import type { HostedRoomRecord, HostedRoomStore } from '../src/hosted/service.ts';
 
 interface HostedRoomRow {
@@ -39,7 +39,7 @@ function fromRow(row: HostedRoomRow): HostedRoomRecord {
   return {
     roomId: row.room_id,
     revision: row.revision,
-    gameState: JSON.parse(row.state_json) as GameState,
+    gameState: hydrateGameStateAvatarIds(JSON.parse(row.state_json) as GameState),
     simulatedAtMs: row.simulated_at_ms,
     updatedAtMs: row.updated_at_ms,
     playerOneTokenHash: row.player_one_token_hash,

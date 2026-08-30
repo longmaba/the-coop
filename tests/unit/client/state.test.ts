@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { defaultAvatarIdForSeat } from '../../../src/game/index.ts';
 import {
   cloneSnapshot,
   nextRestartSequence,
@@ -36,6 +37,7 @@ describe('readSnapshot', () => {
       players: [
         {
           id: 'player-1',
+          avatarId: 'character-male-c',
           connected: true,
           worldX: 168,
           worldY: 264,
@@ -71,6 +73,7 @@ describe('readSnapshot', () => {
     expect(snapshot.players).toEqual([
       {
         id: 'player-1',
+        avatarId: 'character-male-c',
         connected: true,
         worldX: 168,
         worldY: 264,
@@ -83,8 +86,8 @@ describe('readSnapshot', () => {
   it('bounds unknown data and supports an ArraySchema-like collection', () => {
     const players = {
       forEach(callback: (value: unknown) => void) {
-        callback({ id: 'player-1', connected: true, routeKind: 'unexpected' });
-        callback({ id: 'player-2', connected: false, routeKind: 'threshold-stop' });
+        callback({ id: 'player-1', avatarId: 'lion', connected: true, routeKind: 'unexpected' });
+        callback({ id: 'player-2', avatarId: 'character-female-f', connected: false, routeKind: 'threshold-stop' });
         callback({ id: 'ignored-player', connected: true });
       },
     };
@@ -100,6 +103,8 @@ describe('readSnapshot', () => {
     expect(snapshot.tick).toBe(9);
     expect(snapshot.completedAtTick).toBe(0);
     expect(snapshot.players).toHaveLength(2);
+    expect(snapshot.players[0]?.avatarId).toBe(defaultAvatarIdForSeat(0));
+    expect(snapshot.players[1]?.avatarId).toBe('character-female-f');
     expect(snapshot.players[0]?.routeKind).toBe('none');
     expect(snapshot.players[1]?.routeKind).toBe('threshold-stop');
   });

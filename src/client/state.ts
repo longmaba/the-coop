@@ -1,11 +1,14 @@
 import {
   COOPERATIVE_DISCOVERY_GOAL,
+  normalizeAvatarId,
+  type AvatarId,
   type GamePhase,
   type RouteKind,
 } from '../game/index.ts';
 
 export interface RemotePlayer {
   id: string;
+  avatarId: AvatarId;
   connected: boolean;
   worldX: number;
   worldY: number;
@@ -94,11 +97,13 @@ function collectionValues(value: unknown): unknown[] {
   return [];
 }
 
-function playerFrom(value: unknown): RemotePlayer {
+function playerFrom(value: unknown, index: number): RemotePlayer {
   const player = asRecord(value);
+  const id = asString(player.id);
   const routeKind = asString(player.routeKind);
   return {
-    id: asString(player.id),
+    id,
+    avatarId: normalizeAvatarId(player.avatarId, id, index === 0 ? 0 : 1),
     connected: asBoolean(player.connected),
     worldX: asNumber(player.worldX),
     worldY: asNumber(player.worldY),
@@ -172,7 +177,7 @@ export function readSnapshot(raw: unknown): CoopSnapshot {
     teleporters: collectionValues(state.teleporters).map(teleporterFrom).filter(({ id }) => id.length > 0),
     keycards: collectionValues(state.keycards).map(keycardFrom).filter(({ id }) => id.length > 0),
     relayButtons: collectionValues(state.relayButtons).map(relayButtonFrom).filter(({ id }) => id.length > 0),
-    players: collectionValues(state.players).map(playerFrom).slice(0, 2),
+    players: collectionValues(state.players).slice(0, 2).map(playerFrom),
   };
 }
 

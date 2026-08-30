@@ -1,4 +1,6 @@
 import {
+  hydrateGameStateAvatarIds,
+  parseJoinOptions,
   LEVEL_CATALOG,
   RECONNECT_GRACE_SECONDS,
   SIMULATION_HZ,
@@ -8,11 +10,13 @@ import {
   getLevelDefinition,
   projectNetworkState,
   replayCurrentLevel,
+  setPlayerAvatarId,
   setPlayerConnected,
   stepGame,
 } from '../game/index.ts';
 import type {
   GameState,
+  HumanHumanJoinOptions,
   MoveCommandResult,
   MoveTargetCommand,
   RestartCommand,
@@ -94,6 +98,7 @@ export interface HostedSnapshot {
   relayButtons: ReadonlyArray<{ id: string; occupiedBy: string | null }>;
   players: ReadonlyArray<{
     id: string;
+    avatarId: string;
     connected: boolean;
     worldX: number;
     worldY: number;
@@ -152,6 +157,14 @@ function assertRoomId(roomId: string): void {
   if (!ROOM_ID_PATTERN.test(roomId)) {
     throw new HostedServiceError(400, 'invalid-room', 'That room code is invalid.');
   }
+}
+
+function parseHostedHumanOptions(value: unknown): HumanHumanJoinOptions {
+  const parsed = parseJoinOptions(value);
+  if (parsed === null || parsed.roomMode !== 'human-human' || parsed.controllerKind !== 'human') {
+    throw new HostedServiceError(400, 'invalid-request', 'The request is invalid.');
+  }
+  return parsed;
 }
 
 function advanceSimulation(
@@ -220,7 +233,8 @@ export class HostedGameService {
     this.#hashToken = options.hashToken ?? hashToken;
   }
 
-  async createRoom(): Promise<HostedSessionPayload> {
+  async createRoom(options?: unknown): Promise<HostedSessionPayload> {
+    const joinOptions = parseHostedHumanOptions(options);
     const nowMs = this.#now();
     await this.store.deleteUpdatedBefore(nowMs - ROOM_EXPIRY_MS);
 
@@ -229,7 +243,10 @@ export class HostedGameService {
       const token = this.#randomToken(32);
       const playerOneTokenHash = await this.#hashToken(token);
       const disconnected = createGameState(PLAYER_IDS, false);
-      const gameState = setPlayerConnected(disconnected, PLAYER_IDS[0], true);
+      const selected = joinOptions.avatarId === undefined
+        ? disconnected
+        : setPlayerAvatarId(disconnected, PLAYER_IDS[0], joinOptions.avatarId);
+      const gameState = setPlayerConnected(selected, PLAYER_IDS[0], true);
       const record: HostedRoomRecord = {
         roomId,
         revision: 0,
@@ -253,7 +270,8 @@ export class HostedGameService {
     );
   }
 
-  async joinRoom(roomId: string): Promise<HostedSessionPayload> {
+  async joinRoom(roomId: string, options?: unknown): Promise<HostedSessionPayload> {
+    const joinOptions = parseHostedHumanOptions(options);
     assertRoomId(roomId);
     const token = this.#randomToken(32);
     const tokenHash = await this.#hashToken(token);
@@ -269,7 +287,10 @@ export class HostedGameService {
         throw new HostedServiceError(409, 'room-full', 'That room is full.');
       }
 
-      const gameState = setPlayerConnected(prepared.gameState, PLAYER_IDS[1], true);
+      const selected = joinOptions.avatarId === undefined
+        ? prepared.gameState
+        : setPlayerAvatarId(prepared.gameState, PLAYER_IDS[1], joinOptions.avatarId);
+      const gameState = setPlayerConnected(selected, PLAYER_IDS[1], true);
       const next: HostedRoomRecord = {
         ...prepared,
         revision: current.revision + 1,
@@ -464,7 +485,10 @@ export class HostedGameService {
     if (room === null) {
       throw new HostedServiceError(404, 'room-not-found', 'That room code is invalid or has expired.');
     }
-    return room;
+    return {
+      ...room,
+      gameState: hydrateGameStateAvatarIds(room.gameState),
+    };
   }
 
   #session(

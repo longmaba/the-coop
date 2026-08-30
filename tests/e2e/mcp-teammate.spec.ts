@@ -298,6 +298,9 @@ test('browser Player 1 and MCP Player 2 complete the authoritative puzzle', asyn
     invite.searchParams.set('e2e', '1');
 
     await page.goto(invite.toString());
+    await expect(page.getByTestId('landing-shell')).toBeVisible();
+    await page.getByTestId('avatar-option-character-female-d').check();
+    await page.getByTestId('join-room').click();
     await expect(page.getByTestId('game-shell')).toBeVisible();
     await waitForState(page, 'human-AI session to start', (state) =>
       state.phase === 'playing' && state.players.every((player) => player.connected));
@@ -410,6 +413,9 @@ test('browser Player 1 and MCP Player 2 complete all four levels and wrap in one
     const invite = new URL(started.humanJoinUrl!);
     invite.searchParams.set('e2e', '1');
     await page.goto(invite.toString());
+    await expect(page.getByTestId('landing-shell')).toBeVisible();
+    await page.getByTestId('avatar-option-character-female-d').check();
+    await page.getByTestId('join-room').click();
     await expect(page.getByTestId('game-shell')).toBeVisible();
     await waitForState(page, 'campaign session to start on Level 1', (state) =>
       state.phase === 'playing'

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CELL_SIZE,
+  defaultAvatarIdForSeat,
   FIXED_STEP_SECONDS,
   LEVEL_ONE,
   RECONNECT_GRACE_SECONDS,
@@ -10,6 +11,7 @@ import {
   gridToWorld,
   projectNetworkState,
   restartGame,
+  setPlayerAvatarId,
   setPlayerConnected,
   stepGame,
 } from '../../../src/game/index.ts';
@@ -26,6 +28,34 @@ function place(state: GameState, index: 0 | 1, position: WorldPoint, route: Worl
 }
 
 describe('authoritative fixed-step simulation', () => {
+  it('assigns deterministic seat defaults, accepts chosen avatars, and projects them safely', () => {
+    const defaults = createGameState(['one', 'two']);
+    expect(defaults.players.map(({ avatarId }) => avatarId)).toEqual([
+      defaultAvatarIdForSeat(0),
+      defaultAvatarIdForSeat(1),
+    ]);
+
+    const chosen = setPlayerAvatarId(
+      setPlayerAvatarId(defaults, 'one', 'character-male-b'),
+      'two',
+      'character-female-e',
+    );
+    expect(chosen.players.map(({ avatarId }) => avatarId)).toEqual([
+      'character-male-b',
+      'character-female-e',
+    ]);
+
+    const network = projectNetworkState(chosen);
+    expect(network.players[0]).toMatchObject({
+      id: 'one',
+      avatarId: 'character-male-b',
+    });
+    expect(network.players[1]).toMatchObject({
+      id: 'two',
+      avatarId: 'character-female-e',
+    });
+  });
+
   it('rejects non-walkable clicks and ignores stale command sequences', () => {
     const state = createGameState(['one', 'two']);
     const [wallState, wallResult] = applyMoveTarget(state, 'one', { seq: 1, worldX: 24, worldY: 24 });
@@ -151,6 +181,8 @@ describe('authoritative fixed-step simulation', () => {
 
   it('pauses movement during reconnect grace and deterministically restarts', () => {
     let state = createGameState(['one', 'two']);
+    state = setPlayerAvatarId(state, 'one', 'character-male-d');
+    state = setPlayerAvatarId(state, 'two', 'character-female-f');
     [state] = applyMoveTarget(state, 'one', { seq: 4, worldX: point(4, 5).x, worldY: point(4, 5).y });
     state = setPlayerConnected(state, 'two', false);
     expect(state.phase).toBe('reconnectGrace');
@@ -170,6 +202,10 @@ describe('authoritative fixed-step simulation', () => {
     });
     expect(restarted.players[0].position).toEqual(point(3, 6));
     expect(restarted.players[0].lastMoveSeq).toBe(-1);
+    expect(restarted.players.map(({ avatarId }) => avatarId)).toEqual([
+      'character-male-d',
+      'character-female-f',
+    ]);
     expect(restarted.phase).toBe('playing');
     const [stale] = restartGame(restarted, { seq: 1 });
     expect(stale).toBe(restarted);
@@ -211,7 +247,11 @@ describe('authoritative fixed-step simulation', () => {
     const state = createGameState(['one', 'two']);
     const network = projectNetworkState(state);
     expect(network.players[0]).not.toHaveProperty('route');
-    expect(network.players[0]).toMatchObject({ id: 'one', worldX: point(3, 6).x });
+    expect(network.players[0]).toMatchObject({
+      id: 'one',
+      avatarId: defaultAvatarIdForSeat(0),
+      worldX: point(3, 6).x,
+    });
     expect(LEVEL_ONE.exitCells).toHaveLength(12);
     expect(Object.isFrozen(LEVEL_ONE)).toBe(true);
     expect('add' in LEVEL_ONE.walls).toBe(false);

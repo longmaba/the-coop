@@ -182,6 +182,39 @@ describe('transport selection', () => {
 });
 
 describe('CoopNetwork lifecycle fencing', () => {
+  it('forwards optional avatar-bearing human room options to Colyseus create and join', async () => {
+    const room = new FakeRoom();
+    const client = {
+      create: vi.fn(async () => room as unknown as Room),
+      reconnect: vi.fn(),
+      joinById: vi.fn(async () => room as unknown as Room),
+    };
+    const network = new CoopNetwork(connectionEvents(), client as never);
+
+    await network.create({
+      roomMode: 'human-human',
+      controllerKind: 'human',
+      avatarId: 'character-male-b',
+    });
+    expect(client.create).toHaveBeenCalledWith('coop', {
+      roomMode: 'human-human',
+      controllerKind: 'human',
+      avatarId: 'character-male-b',
+    });
+
+    network.dispose();
+    await network.join('room-current', {
+      roomMode: 'human-human',
+      controllerKind: 'human',
+      avatarId: 'character-female-e',
+    });
+    expect(client.joinById).toHaveBeenCalledWith('room-current', {
+      roomMode: 'human-human',
+      controllerKind: 'human',
+      avatarId: 'character-female-e',
+    });
+  });
+
   it('closes and rejects a room that arrives after the attempt was disposed', async () => {
     const room = new FakeRoom();
     let resolveJoin!: (room: Room) => void;

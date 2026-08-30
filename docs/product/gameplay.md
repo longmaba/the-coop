@@ -10,6 +10,20 @@ after Level 4 starts the campaign again at Level 1.
 There is no level selection or progression saved outside the room. Reconnects
 restore the current level and its exact authoritative mechanism state.
 
+## Character Customization
+
+Every browser player chooses one of 12 animated human explorers on the landing
+page before creating or joining a room. Invite links prefill the room code but
+do not skip this choice. The selected avatar is carried in authoritative room
+snapshots, rendered consistently for both peers, and preserved through
+reconnect, replay, and level advancement.
+
+Avatar choice is visual only: it does not change seats, movement, collision,
+mechanics, or MCP permissions. Both players may choose the same character; the
+existing P1/P2 labels remain the identity authority. Legacy clients, the local
+MCP teammate, and older hosted room records receive deterministic seat-based
+defaults when they do not provide a valid avatar.
+
 ## Interaction Rules
 
 All interaction is movement-triggered. There are no action buttons, timers,
@@ -54,9 +68,10 @@ The stdio MCP teammate controls only Player 2 and retains the existing
 game session. The experimental browser WebMCP adapter instead exposes `chat`,
 `join_game`, `observe_game`, and `move_player_two` on the page. A human creates a
 normal room first; `join_game` accepts exactly one bounded `code` string from an
-unseated landing page and succeeds only after the server confirms Player 2 in
-seat 2. The browser adapter uses the page's existing network and snapshot rather
-than creating a second session.
+unseated landing page, uses the character currently selected on that page (or
+the deterministic Explorer A default), and succeeds only after the server
+confirms Player 2 in seat 2. The browser adapter uses the page's existing network
+and snapshot rather than creating a second session.
 
 Both teammate adapters use the same transport-neutral observation, target, and
 movement-settlement policy. Observations expose the active level, mechanism

@@ -3,7 +3,15 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { BoxGeometry, Group, Mesh, MeshBasicMaterial } from 'three';
 import { describe, expect, it } from 'vitest';
-import { normalizeAndGroundAvatar } from '../../../src/client/three/assets.ts';
+import {
+  AVATAR_ASSET_IDS,
+  AVATAR_CATALOG,
+  avatarLabel,
+  defaultAvatarAssetIdForPlayerId,
+  isAvatarAssetId,
+  normalizeAndGroundAvatar,
+  resolveAvatarAssetId,
+} from '../../../src/client/three/assets.ts';
 
 interface GlbAccessor {
   readonly min?: number[];
@@ -46,10 +54,9 @@ const ENVIRONMENT_MODELS = Object.freeze([
   { id: 'gateDoor', relativePath: 'assets/GLB format/gate-door.glb' },
 ] as const satisfies readonly ModelFixture[]);
 
-const CHARACTER_MODELS = Object.freeze([
-  { id: 'lion', relativePath: 'assets/characters/animal-lion.glb' },
-  { id: 'penguin', relativePath: 'assets/characters/animal-penguin.glb' },
-] as const satisfies readonly ModelFixture[]);
+const CHARACTER_MODELS: readonly ModelFixture[] = Object.freeze(
+  AVATAR_ASSET_IDS.map((id) => ({ id, relativePath: `assets/new_characters/${id}.glb` })),
+);
 
 const SELECTED_MODELS: readonly ModelFixture[] = Object.freeze([
   ...ENVIRONMENT_MODELS,
@@ -58,13 +65,15 @@ const SELECTED_MODELS: readonly ModelFixture[] = Object.freeze([
 
 const COLORMAPS = Object.freeze([
   'assets/GLB format/Textures/colormap.png',
-  'assets/characters/Textures/colormap.png',
+  'assets/new_characters/Textures/colormap.png',
 ] as const);
 
 const SELECTED_FILES: readonly string[] = Object.freeze([
   ...SELECTED_MODELS.map(({ relativePath }) => relativePath),
   ...COLORMAPS,
 ]);
+
+const SELECTED_ASSET_BUDGET_BYTES = 3.5 * 1024 * 1024;
 
 function repositoryPath(relativePath: string): string {
   return resolve(REPOSITORY_ROOT, relativePath);
@@ -96,13 +105,13 @@ function animationNames(model: ModelFixture): readonly string[] {
 }
 
 describe('selected Three.js asset files', () => {
-  it('stay inside the 750 KiB transfer budget', () => {
+  it('stay inside the 3.5 MiB transfer budget', () => {
     const totalBytes = SELECTED_FILES.reduce(
       (total, relativePath) => total + statSync(repositoryPath(relativePath)).size,
       0,
     );
 
-    expect(totalBytes).toBeLessThanOrEqual(750 * 1024);
+    expect(totalBytes).toBeLessThanOrEqual(SELECTED_ASSET_BUDGET_BYTES);
   });
 
   it('use valid PNG files for both pack-specific colormaps', () => {
@@ -110,6 +119,39 @@ describe('selected Three.js asset files', () => {
     for (const relativePath of COLORMAPS) {
       expect(readFileSync(repositoryPath(relativePath)).subarray(0, 8)).toEqual(pngSignature);
     }
+  });
+});
+
+describe('avatar catalog helpers', () => {
+  it('exposes the 12 selectable avatars with neutral explorer labels', () => {
+    expect(Object.isFrozen(AVATAR_CATALOG)).toBe(true);
+    expect(AVATAR_CATALOG).toHaveLength(12);
+    expect(AVATAR_CATALOG.map(({ id }) => id)).toEqual(AVATAR_ASSET_IDS);
+    expect(AVATAR_CATALOG.map(({ label }) => label)).toEqual([
+      'Explorer A',
+      'Explorer B',
+      'Explorer C',
+      'Explorer D',
+      'Explorer E',
+      'Explorer F',
+      'Explorer G',
+      'Explorer H',
+      'Explorer I',
+      'Explorer J',
+      'Explorer K',
+      'Explorer L',
+    ]);
+  });
+
+  it('validates avatar ids, labels them, and falls back by seat', () => {
+    expect(isAvatarAssetId('character-female-a')).toBe(true);
+    expect(isAvatarAssetId('lion')).toBe(false);
+    expect(avatarLabel('character-male-f')).toBe('Explorer L');
+    expect(defaultAvatarAssetIdForPlayerId('player-1')).toBe('character-female-a');
+    expect(defaultAvatarAssetIdForPlayerId('player-2')).toBe('character-male-a');
+    expect(resolveAvatarAssetId('character-female-d', 'player-2')).toBe('character-female-d');
+    expect(resolveAvatarAssetId('invalid-avatar', 'player-2')).toBe('character-male-a');
+    expect(resolveAvatarAssetId(undefined, 'player-1')).toBe('character-female-a');
   });
 });
 

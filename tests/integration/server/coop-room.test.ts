@@ -95,8 +95,16 @@ describe('authoritative private coop room', () => {
     let reconnectedCreator: Room | undefined;
 
     try {
-      creator = await new Client(ENDPOINT).create('coop', {}, CoopStateSchema);
-      guest = await new Client(ENDPOINT).joinById(creator.roomId, {}, CoopStateSchema);
+      creator = await new Client(ENDPOINT).create('coop', {
+        roomMode: 'human-human',
+        controllerKind: 'human',
+        avatarId: 'character-male-c',
+      }, CoopStateSchema);
+      guest = await new Client(ENDPOINT).joinById(creator.roomId, {
+        roomMode: 'human-human',
+        controllerKind: 'human',
+        avatarId: 'character-female-e',
+      }, CoopStateSchema);
       await waitFor(
         () => creator?.state.phase === 'playing'
           && creator.state.levelId === 'level_1'
@@ -150,6 +158,10 @@ describe('authoritative private coop room', () => {
         'player-1',
         'player-2',
       ]);
+      expect(creator.state.players.map(({ avatarId }: { avatarId: string }) => avatarId)).toEqual([
+        'character-male-c',
+        'character-female-e',
+      ]);
       expect(creator.state.players.every(
         ({ routeKind, lastMoveSeq }: { routeKind: string; lastMoveSeq: number }) =>
           routeKind === 'none' && lastMoveSeq === -1,
@@ -201,6 +213,10 @@ describe('authoritative private coop room', () => {
           && reconnectedCreator.state.players[0]?.connected === true,
         'campaign reconnect restoration',
       );
+      expect(reconnectedCreator.state.players.map(({ avatarId }: { avatarId: string }) => avatarId)).toEqual([
+        'character-male-c',
+        'character-female-e',
+      ]);
       expect(mechanismSnapshot(reconnectedCreator)).toEqual(beforeReconnect);
 
       forceCompleted(reconnectedCreator.roomId);
@@ -262,10 +278,10 @@ describe('authoritative private coop room', () => {
       );
       expect(guest.roomId).toBe(reconnectedCreator.roomId);
       expect(guest.state.players.map(
-        ({ id, connected }: { id: string; connected: boolean }) => ({ id, connected }),
+        ({ id, avatarId, connected }: { id: string; avatarId: string; connected: boolean }) => ({ id, avatarId, connected }),
       )).toEqual([
-        { id: 'player-1', connected: true },
-        { id: 'player-2', connected: true },
+        { id: 'player-1', avatarId: 'character-male-c', connected: true },
+        { id: 'player-2', avatarId: 'character-female-e', connected: true },
       ]);
     } finally {
       await leaveQuietly(reconnectedCreator);
@@ -287,6 +303,7 @@ describe('authoritative private coop room', () => {
         playerId: 'player-2',
         pairingTokenHash: pairing.tokenHash,
         pairingExpiresAt: pairing.expiresAt,
+        avatarId: 'character-male-f',
       }, CoopStateSchema);
       const mcpSeat = nextMessage<{ playerId: string; slot: number; roomId: string }>(mcpRoom, 'seat');
       await expect(mcpSeat).resolves.toEqual({
@@ -314,6 +331,7 @@ describe('authoritative private coop room', () => {
         controllerKind: 'human',
         playerId: 'player-1',
         pairingToken: pairing.token,
+        avatarId: 'character-female-b',
       } as const;
       const contenders = await Promise.allSettled([
         new Client(ENDPOINT).joinById(mcpRoom.roomId, invite, CoopStateSchema),
@@ -342,6 +360,8 @@ describe('authoritative private coop room', () => {
       );
       expect(mcpRoom.state.players[0]?.id).toBe('player-1');
       expect(mcpRoom.state.players[1]?.id).toBe('player-2');
+      expect(mcpRoom.state.players[0]?.avatarId).toBe('character-female-b');
+      expect(mcpRoom.state.players[1]?.avatarId).toBe('character-male-f');
       await expect(new Client(ENDPOINT).joinById(mcpRoom.roomId, invite, CoopStateSchema)).rejects.toThrow();
 
       const reconnectToken = mcpRoom.reconnectionToken;
@@ -361,6 +381,8 @@ describe('authoritative private coop room', () => {
           && reconnectedMcp.state.players[1]?.connected === true,
         'MCP Player 2 identity after reconnect',
       );
+      expect(reconnectedMcp.state.players[0]?.avatarId).toBe('character-female-b');
+      expect(reconnectedMcp.state.players[1]?.avatarId).toBe('character-male-f');
     } finally {
       await leaveQuietly(reconnectedMcp);
       await leaveQuietly(humanRoom);

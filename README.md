@@ -16,14 +16,19 @@ npm install
 npm run dev
 ```
 
-Open `http://127.0.0.1:5173` in one browser profile, select **Create Room**, then use the displayed room code or invite URL in a second browser profile. Session storage is isolated per profile, so two separate profiles or private windows are the most reliable local setup.
+Open `http://127.0.0.1:5173` in one browser profile, choose a character,
+then select **Create Room**. Open the displayed invite URL in a second browser
+profile, choose that player's character, and select **Join**. Session storage is
+isolated per profile, so two separate profiles or private windows are the most
+reliable local setup.
 
 When the game is open in a WebMCP-capable built-in browser, the page registers
 `chat`, `join_game`, `observe_game`, and `move_player_two` once for that page.
-`join_game` takes exactly `{ "code": "ROOM_CODE" }` on an unseated landing page:
-create a normal room as Explorer 1 in another browser, copy its room code, and
-give that code to the agent. The call succeeds only after the game server assigns
-the built-in browser as Explorer 2. The agent can then observe the safe current
+`join_game` takes exactly `{ "code": "ROOM_CODE" }` on an unseated landing page
+and uses the character currently selected there (Explorer A by default): create
+a normal room as Explorer 1 in another browser, copy its room code, and give that
+code to the agent. The call succeeds only after the game server assigns the
+built-in browser as Explorer 2. The agent can then observe the safe current
 level and request server-authoritative Explorer 2 movement, waiting for either
 acceptance or confirmed arrival. Explorer 1 pages cannot use the observation or
 movement tools. This browser flow differs from the stdio teammate below:
@@ -84,9 +89,10 @@ On Windows:
    `observe_game`, and `move_player_two`.
 4. In desktop voice, say “start a game.” Codex calls `start_game` and returns a
    loopback Player 1 link.
-5. Open that link in a browser. Its one-time pairing credential is kept in the
-   URL fragment, redeemed through Colyseus, saved as a reconnection seat, and
-   then removed from the address bar.
+5. Open that link in a browser, choose a character, and select **Join**. Its
+   one-time pairing credential is kept in the URL fragment, redeemed through
+   Colyseus, saved as a reconnection seat, and then removed from the address
+   bar.
 6. Give game instructions such as “stand on Plate A,” “power Teleporter
    Alpha,” “use the Alpha teleporter,” “get Card Alpha,” or “stay on Gate
    Button B.” Codex observes the active level before resolving references and
@@ -137,7 +143,7 @@ Players can pass through each other. If a connection drops during play, the room
 - `src/server`: private two-seat Colyseus room and schema projection
 - `src/mcp`: local Player 2 Colyseus client and stdio MCP tools
 - `src/client`: Three.js facility renderer, lobby, networking, HUD, imported low-poly visuals, and audio cues
-- `assets`: user-supplied modular facility and animal GLBs; the production client imports only the selected runtime set
+- `assets`: user-supplied modular facility, animated human character, aid, and mobility GLBs; the production client imports the facility and 12 selectable body models
 - `tests/unit`: pathfinding, simulation, client state, and protocol-boundary tests
 - `tests/integration`: real Colyseus SDK room lifecycle
 - `tests/e2e`: browser/browser and browser/MCP clients solving, progressing, reconnecting, rejecting a third seat, replaying, and wrapping the campaign

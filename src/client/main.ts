@@ -1,4 +1,11 @@
-import type { MoveTargetCommand, RestartCommand, WorldPoint } from '../game/index.ts';
+import {
+  defaultAvatarIdForSeat,
+  type AvatarId,
+  type JoinOptions,
+  type MoveTargetCommand,
+  type RestartCommand,
+  type WorldPoint,
+} from '../game/index.ts';
 import {
   createTeammateObservation,
   moveAcceptance,
@@ -12,9 +19,13 @@ import { CoopNetwork, savedRoomId } from './network.ts';
 import { campaignPresentation } from './presentation.ts';
 import { TransientChatPopup } from './transient-chat.ts';
 import {
+  AVATAR_CATALOG,
+  avatarLabel,
+  isAvatarAssetId,
   isThreeAssetLibraryReady,
   preloadThreeAssets,
 } from './three/assets.ts';
+import { AvatarPreview } from './three/avatar-preview.ts';
 import { FacilityRenderer } from './three/facility-renderer.ts';
 import {
   cloneSnapshot,
@@ -49,6 +60,8 @@ let lifecycleGeneration = 0;
 let status: ClientStatus = 'landing';
 let statusDetail = '';
 let browserToolTerminal = false;
+let selectedAvatarId: AvatarId = defaultAvatarIdForSeat(0);
+let avatarPreview: AvatarPreview | null = null;
 const playerTwoMovement = new PlayerTwoMovementCoordinator();
 
 const chatPopup = new TransientChatPopup({
@@ -76,6 +89,13 @@ interface PairingInvite {
   pairingToken: string;
 }
 
+interface PendingJoin {
+  roomId: string;
+  pairingToken?: string;
+}
+
+let pendingJoin: PendingJoin | null = null;
+
 const pairingInviteFromUrl = (): PairingInvite | null => {
   const params = new URLSearchParams(window.location.hash.slice(1));
   const roomId = params.get('room')?.trim() ?? '';
@@ -100,17 +120,82 @@ async function copy(text: string): Promise<void> {
   try { await navigator.clipboard.writeText(text); } catch { /* Clipboard availability is non-essential. */ }
 }
 
+function avatarChoicesMarkup(): string {
+  return AVATAR_CATALOG.map(({ id, label }, index) => `
+    <label class="avatar-choice" title="${label}">
+      <input
+        type="radio"
+        name="avatar"
+        value="${id}"
+        data-testid="avatar-option-${id}"
+        aria-label="${label}"
+        ${id === selectedAvatarId ? 'checked' : ''}
+      />
+      <span aria-hidden="true">${String.fromCharCode(65 + index)}</span>
+    </label>`).join('');
+}
+
+function pairingTokenFor(roomId: string): string | undefined {
+  return pendingJoin?.roomId === roomId ? pendingJoin.pairingToken : undefined;
+}
+
+function clearJoinIntentFromUrl(): void {
+  const url = new URL(window.location.href);
+  url.searchParams.delete('room');
+  url.hash = '';
+  history.replaceState(null, '', `${url.pathname}${url.search}`);
+}
+
+function startAvatarPreview(generation: number): void {
+  void preloadThreeAssets().then(() => {
+    if (generation !== lifecycleGeneration || status !== 'landing') return;
+    const root = element<HTMLElement>('[data-testid="avatar-preview"]');
+    if (root === null) return;
+    const preview = new AvatarPreview();
+    preview.start(root, selectedAvatarId);
+    if (generation !== lifecycleGeneration || status !== 'landing') {
+      preview.destroy();
+      return;
+    }
+    avatarPreview?.destroy();
+    avatarPreview = preview;
+    const placeholder = element<HTMLElement>('[data-testid="avatar-preview-status"]');
+    if (placeholder !== null) placeholder.hidden = true;
+  }).catch(() => {
+    if (generation !== lifecycleGeneration || status !== 'landing') return;
+    setText('[data-testid="avatar-preview-status"]', 'Preview unavailable');
+  });
+}
+
 function landing(error = ''): void {
-  lifecycleGeneration += 1;
+  const generation = ++lifecycleGeneration;
   chatPopup.clear();
   facility?.destroy();
   facility = null;
+  avatarPreview?.destroy();
+  avatarPreview = null;
   app.innerHTML = `
     <main class="landing" data-testid="landing-shell">
       <section class="landing-card" aria-labelledby="game-title">
         <p class="eyebrow">Realtime facility puzzle</p>
         <h1 id="game-title">THE COOP</h1>
         <p class="theme">Hold the line. Open the door. Get both explorers home.</p>
+        <section class="character-customization" data-testid="avatar-customization" aria-labelledby="avatar-heading">
+          <div class="avatar-preview-panel">
+            <div class="avatar-preview" data-testid="avatar-preview">
+              <span class="avatar-preview-status" data-testid="avatar-preview-status" role="status">Loading character preview…</span>
+            </div>
+            <div class="avatar-selection-copy">
+              <p class="eyebrow">Your character</p>
+              <h2 id="avatar-heading" data-testid="selected-avatar-name">${avatarLabel(selectedAvatarId)}</h2>
+              <p>Choose your explorer before creating or joining a room.</p>
+            </div>
+          </div>
+          <fieldset class="avatar-options">
+            <legend>Choose a character</legend>
+            <div class="avatar-choice-grid">${avatarChoicesMarkup()}</div>
+          </fieldset>
+        </section>
         <div class="lobby-actions">
           <button class="primary" type="button" data-testid="create-room">Create Room</button>
           <div class="join-row">
@@ -129,16 +214,29 @@ function landing(error = ''): void {
     </main>`;
   setText('[data-testid="room-error"]', error);
   const input = element<HTMLInputElement>('[data-testid="room-code-input"]');
+  if (input !== null && pendingJoin !== null) input.value = pendingJoin.roomId;
   element<HTMLButtonElement>('[data-testid="create-room"]')?.addEventListener('click', () => { void startCreate(); });
-  element<HTMLButtonElement>('[data-testid="join-room"]')?.addEventListener('click', () => { void startJoin(input?.value ?? ''); });
-  input?.addEventListener('keydown', (event) => { if (event.key === 'Enter') void startJoin(input.value); });
-  void preloadThreeAssets().catch(() => {
-    // Create/join surfaces the actionable error; speculative landing preload is quiet.
-  });
+  const join = (): void => {
+    const roomId = input?.value.trim() ?? '';
+    void startJoin(roomId, pairingTokenFor(roomId));
+  };
+  element<HTMLButtonElement>('[data-testid="join-room"]')?.addEventListener('click', join);
+  input?.addEventListener('keydown', (event) => { if (event.key === 'Enter') join(); });
+  for (const option of app.querySelectorAll<HTMLInputElement>('input[name="avatar"]')) {
+    option.addEventListener('change', () => {
+      if (!option.checked || !isAvatarAssetId(option.value)) return;
+      selectedAvatarId = option.value;
+      setText('[data-testid="selected-avatar-name"]', avatarLabel(selectedAvatarId));
+      avatarPreview?.select(selectedAvatarId);
+    });
+  }
+  startAvatarPreview(generation);
 }
 
 function gameShell(): void {
   chatPopup.clear();
+  avatarPreview?.destroy();
+  avatarPreview = null;
   app.innerHTML = `
     <main class="game-shell" data-testid="game-shell">
       <header class="hud" aria-label="Game status">
@@ -337,7 +435,16 @@ function createNetwork(generation: number): CoopNetwork {
   return createdNetwork;
 }
 
+function selectedHumanJoinOptions(): JoinOptions {
+  return {
+    roomMode: 'human-human',
+    controllerKind: 'human',
+    avatarId: selectedAvatarId,
+  };
+}
+
 async function startCreate(): Promise<void> {
+  pendingJoin = null;
   const generation = ++lifecycleGeneration;
   gameShell();
   status = 'creating';
@@ -354,7 +461,7 @@ async function startCreate(): Promise<void> {
   const attemptedNetwork = createNetwork(generation);
   network = attemptedNetwork;
   try {
-    await attemptedNetwork.create();
+    await attemptedNetwork.create(selectedHumanJoinOptions());
   } catch {
     showConnectionError(attemptedNetwork, generation);
   }
@@ -382,17 +489,19 @@ async function startJoin(rawRoomId: string, pairingToken?: string): Promise<void
     const restored = await attemptedNetwork.reconnectIfMatching(roomId);
     if (!ownsBrowserLifecycle(lifecycleGeneration, network, generation, attemptedNetwork)) return;
     if (!restored) {
-      await attemptedNetwork.join(roomId, pairingToken === undefined ? undefined : {
-        roomMode: 'human-ai',
-        controllerKind: 'human',
-        playerId: 'player-1',
-        pairingToken,
-      });
+      await attemptedNetwork.join(roomId, pairingToken === undefined
+        ? selectedHumanJoinOptions()
+        : {
+            roomMode: 'human-ai',
+            controllerKind: 'human',
+            playerId: 'player-1',
+            pairingToken,
+            avatarId: selectedAvatarId,
+          });
     }
     if (!ownsBrowserLifecycle(lifecycleGeneration, network, generation, attemptedNetwork)) return;
-    if (pairingToken !== undefined) {
-      history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
-    }
+    pendingJoin = null;
+    clearJoinIntentFromUrl();
   } catch {
     showConnectionError(attemptedNetwork, generation);
   }
@@ -439,6 +548,7 @@ function returnToLobby(): void {
   transitionSeq = 0;
   status = 'landing';
   statusDetail = '';
+  pendingJoin = null;
   history.replaceState(null, '', window.location.pathname);
   landing();
 }
@@ -470,7 +580,7 @@ async function joinGameFromWebMcp(code: string): Promise<BrowserJoinResult> {
     if (generation !== lifecycleGeneration) throw new Error('The join_game attempt was cancelled by a newer page lifecycle.');
     attemptedNetwork = createNetwork(generation);
     network = attemptedNetwork;
-    await attemptedNetwork.joinAsPlayerTwo(code);
+    await attemptedNetwork.joinAsPlayerTwo(code, selectedHumanJoinOptions());
     if (generation !== lifecycleGeneration || network !== attemptedNetwork) {
       attemptedNetwork.dispose(true);
       throw new Error('The join_game attempt became stale before seat confirmation.');
@@ -558,6 +668,13 @@ function installDiagnostics(): void {
 
 declare global { interface Window { __THE_COOP_E2E__?: unknown; } }
 
+const startupPairingInvite = pairingInviteFromUrl();
+const startupRoomFromUrl = roomIdFromUrl();
+pendingJoin = startupPairingInvite ?? (
+  startupRoomFromUrl === null ? null : { roomId: startupRoomFromUrl }
+);
+const startupSavedRoom = pendingJoin === null ? savedRoomId() : null;
+
 landing();
 void registerWebMcpTools({
   displayMessage: (message) => chatPopup.show(message),
@@ -568,6 +685,4 @@ void registerWebMcpTools({
   console.error(error instanceof Error ? error.message : 'WebMCP tool registration failed.');
 });
 installDiagnostics();
-const pairingInvite = pairingInviteFromUrl();
-const startupRoom = pairingInvite?.roomId ?? roomIdFromUrl() ?? savedRoomId();
-if (startupRoom !== null) void startJoin(startupRoom, pairingInvite?.pairingToken);
+if (startupSavedRoom !== null) void startJoin(startupSavedRoom);

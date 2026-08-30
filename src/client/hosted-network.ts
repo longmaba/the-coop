@@ -73,11 +73,21 @@ export class HostedNetwork implements NetworkTransport {
   get snapshot(): CoopSnapshot { return this.#snapshot; }
   get seat(): number | null { return this.#seat; }
 
-  async create(): Promise<void> {
+  async create(options?: JoinOptions): Promise<void> {
     this.#events.onStatus('creating');
+    if (options?.roomMode === 'human-ai') {
+      const error = new HostedApiError(
+        400,
+        'hosted-mcp-unsupported',
+        'Hosted play currently supports a browser partner. Use the local app for the Codex teammate.',
+      );
+      this.#reportConnectError(error);
+      throw error;
+    }
     try {
       const session = await this.#request<HostedSessionPayload>(API_ROOT, {
         method: 'POST',
+        ...(options === undefined ? {} : { body: JSON.stringify(options) }),
       });
       this.#acceptSession(session);
     } catch (error) {
@@ -100,7 +110,10 @@ export class HostedNetwork implements NetworkTransport {
     try {
       const session = await this.#request<HostedSessionPayload>(
         roomPath(roomId, 'join'),
-        { method: 'POST' },
+        {
+          method: 'POST',
+          ...(options === undefined ? {} : { body: JSON.stringify(options) }),
+        },
       );
       this.#acceptSession(session);
     } catch (error) {
@@ -109,8 +122,9 @@ export class HostedNetwork implements NetworkTransport {
     }
   }
 
-  async joinAsPlayerTwo(roomId: string): Promise<void> {
+  async joinAsPlayerTwo(roomId: string, options?: JoinOptions): Promise<void> {
     void roomId;
+    void options;
     const error = new HostedApiError(
       400,
       'hosted-mcp-unsupported',

@@ -15,6 +15,7 @@ import {
   getLevelDefinition,
   projectNetworkState,
   replayCurrentLevel,
+  setPlayerAvatarId,
   setPlayerConnected,
   stepGame,
 } from '../game/index.ts';
@@ -26,6 +27,7 @@ import {
 import { PairingTokenGate } from './pairing.ts';
 import type { Client } from '@colyseus/core';
 import type {
+  AvatarId,
   GameState,
   MoveTargetCommand,
   PlayerId,
@@ -40,6 +42,7 @@ const MAX_RESTART_SEQUENCE = 2_147_483_647;
 
 export class PlayerSchema extends Schema {
   declare id: string;
+  declare avatarId: string;
   declare connected: boolean;
   declare worldX: number;
   declare worldY: number;
@@ -49,6 +52,7 @@ export class PlayerSchema extends Schema {
   constructor() {
     super();
     this.id = '';
+    this.avatarId = '';
     this.connected = false;
     this.worldX = 0;
     this.worldY = 0;
@@ -59,6 +63,7 @@ export class PlayerSchema extends Schema {
 
 defineTypes(PlayerSchema, {
   id: 'string',
+  avatarId: 'string',
   connected: 'boolean',
   worldX: 'float64',
   worldY: 'float64',
@@ -264,6 +269,7 @@ export class CoopRoom extends Room<{ state: CoopStateSchema }> {
   private pairingGate: PairingTokenGate | null = null;
   private readonly playerBySession = new Map<string, (typeof PLAYER_IDS)[number]>();
   private readonly authorizedPlayerBySession = new Map<string, PlayerId>();
+  private readonly requestedAvatarBySession = new Map<string, AvatarId>();
   private readonly droppedSessions = new Set<string>();
   private readonly finalizedSessions = new Set<string>();
 
@@ -304,6 +310,9 @@ export class CoopRoom extends Room<{ state: CoopStateSchema }> {
       if (parsed.controllerKind !== 'human') {
         throw new Error('Only human clients can join this room.');
       }
+      if (parsed.avatarId !== undefined) {
+        this.requestedAvatarBySession.set(client.sessionId, parsed.avatarId);
+      }
       return true;
     }
 
@@ -313,6 +322,9 @@ export class CoopRoom extends Room<{ state: CoopStateSchema }> {
       && !this.authorizedPlayerBySession.has(client.sessionId)
     ) {
       this.authorizedPlayerBySession.set(client.sessionId, 'player-2');
+      if (parsed.avatarId !== undefined) {
+        this.requestedAvatarBySession.set(client.sessionId, parsed.avatarId);
+      }
       return true;
     }
 
@@ -320,6 +332,9 @@ export class CoopRoom extends Room<{ state: CoopStateSchema }> {
       const claimed = this.pairingGate.claim(parsed.pairingToken, client.sessionId);
       if (claimed.accepted) {
         this.authorizedPlayerBySession.set(client.sessionId, 'player-1');
+        if (parsed.avatarId !== undefined) {
+          this.requestedAvatarBySession.set(client.sessionId, parsed.avatarId);
+        }
         return true;
       }
     }
@@ -344,10 +359,16 @@ export class CoopRoom extends Room<{ state: CoopStateSchema }> {
       if (consumed?.accepted !== true) {
         this.playerBySession.delete(client.sessionId);
         this.authorizedPlayerBySession.delete(client.sessionId);
+        this.requestedAvatarBySession.delete(client.sessionId);
         throw new Error('The Player 1 pairing invite expired before seat assignment.');
       }
     }
 
+    const requestedAvatarId = this.requestedAvatarBySession.get(client.sessionId);
+    if (requestedAvatarId !== undefined) {
+      this.game = setPlayerAvatarId(this.game, playerId, requestedAvatarId);
+      this.requestedAvatarBySession.delete(client.sessionId);
+    }
     this.game = setPlayerConnected(this.game, playerId, true);
     this.droppedSessions.delete(client.sessionId);
     this.finalizedSessions.delete(client.sessionId);
@@ -519,6 +540,7 @@ export class CoopRoom extends Room<{ state: CoopStateSchema }> {
       const target = this.state.players[index];
       if (source === undefined || target === undefined) continue;
       target.id = source.id;
+      target.avatarId = source.avatarId;
       target.connected = source.connected;
       target.worldX = source.worldX;
       target.worldY = source.worldY;

@@ -52,9 +52,9 @@ export interface NetworkTransport {
   readonly playerId: string | null;
   readonly snapshot: CoopSnapshot;
   readonly seat: number | null;
-  create(): Promise<void>;
+  create(options?: JoinOptions): Promise<void>;
   join(roomId: string, options?: JoinOptions): Promise<void>;
-  joinAsPlayerTwo(roomId: string): Promise<void>;
+  joinAsPlayerTwo(roomId: string, options?: JoinOptions): Promise<void>;
   reconnectIfMatching(roomId: string): Promise<boolean>;
   sendMove(command: MoveTargetCommand): boolean;
   restart(command: RestartCommand): void;
@@ -167,9 +167,11 @@ class ColyseusNetwork implements NetworkTransport {
   get snapshot(): CoopSnapshot { return this.#snapshot; }
   get seat(): number | null { return this.#seat; }
 
-  async create(): Promise<void> {
+  async create(options?: JoinOptions): Promise<void> {
     this.#events.onStatus('creating');
-    await this.#connect(() => this.#client.create('coop'));
+    await this.#connect(() => options === undefined
+      ? this.#client.create('coop')
+      : this.#client.create('coop', options));
   }
 
   async join(roomId: string, options?: JoinOptions): Promise<void> {
@@ -177,12 +179,14 @@ class ColyseusNetwork implements NetworkTransport {
     await this.#connect(() => this.#client.joinById(roomId, options));
   }
 
-  async joinAsPlayerTwo(roomId: string): Promise<void> {
+  async joinAsPlayerTwo(roomId: string, options?: JoinOptions): Promise<void> {
     this.#events.onStatus('joining');
     let attempt: number | null = null;
     try {
       await this.#connect(
-        () => this.#client.joinById(roomId),
+        () => options === undefined
+          ? this.#client.joinById(roomId)
+          : this.#client.joinById(roomId, options),
         (startedAttempt) => { attempt = startedAttempt; },
       );
       await this.#waitForPlayerTwoSeat();
@@ -429,12 +433,12 @@ export class CoopNetwork implements NetworkTransport {
   get snapshot(): CoopSnapshot { return this.#transport.snapshot; }
   get seat(): number | null { return this.#transport.seat; }
 
-  create(): Promise<void> { return this.#transport.create(); }
+  create(options?: JoinOptions): Promise<void> { return this.#transport.create(options); }
   join(roomId: string, options?: JoinOptions): Promise<void> {
     return this.#transport.join(roomId, options);
   }
-  joinAsPlayerTwo(roomId: string): Promise<void> {
-    return this.#transport.joinAsPlayerTwo(roomId);
+  joinAsPlayerTwo(roomId: string, options?: JoinOptions): Promise<void> {
+    return this.#transport.joinAsPlayerTwo(roomId, options);
   }
   reconnectIfMatching(roomId: string): Promise<boolean> {
     return this.#transport.reconnectIfMatching(roomId);

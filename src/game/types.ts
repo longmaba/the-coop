@@ -11,6 +11,23 @@ export type ControllerKind = 'human' | 'mcp';
 
 export type PlayerId = 'player-1' | 'player-2';
 
+export const AVATAR_IDS = Object.freeze([
+  'character-female-a',
+  'character-female-b',
+  'character-female-c',
+  'character-female-d',
+  'character-female-e',
+  'character-female-f',
+  'character-male-a',
+  'character-male-b',
+  'character-male-c',
+  'character-male-d',
+  'character-male-e',
+  'character-male-f',
+] as const);
+
+export type AvatarId = (typeof AVATAR_IDS)[number];
+
 export type LevelId = 'level_1' | 'level_2' | 'level_3' | 'level_4';
 
 export type GateId = 'gate_main';
@@ -44,6 +61,7 @@ export type InteractableId =
 export interface HumanHumanJoinOptions {
   roomMode: 'human-human';
   controllerKind: 'human';
+  avatarId?: AvatarId;
 }
 
 export interface HumanAiCreateOptions {
@@ -52,6 +70,7 @@ export interface HumanAiCreateOptions {
   playerId: 'player-2';
   pairingTokenHash: string;
   pairingExpiresAt: number;
+  avatarId?: AvatarId;
 }
 
 export interface HumanAiHumanJoinOptions {
@@ -59,6 +78,7 @@ export interface HumanAiHumanJoinOptions {
   controllerKind: 'human';
   playerId: 'player-1';
   pairingToken: string;
+  avatarId?: AvatarId;
 }
 
 export type JoinOptions =
@@ -104,6 +124,7 @@ export interface MoveCommandResult {
 
 export interface PlayerState {
   id: string;
+  avatarId: AvatarId;
   connected: boolean;
   spawn: WorldPoint;
   position: WorldPoint;
@@ -137,6 +158,7 @@ export interface GameState {
 
 export interface NetworkPlayerState {
   id: string;
+  avatarId: AvatarId;
   connected: boolean;
   worldX: number;
   worldY: number;
@@ -201,6 +223,7 @@ export type LevelTransitionEvent = RestartEvent | AdvanceEvent;
 
 const PAIRING_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const SHA_256_PATTERN = /^[a-f0-9]{64}$/;
+const AVATAR_ID_SET = new Set<string>(AVATAR_IDS);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -210,6 +233,34 @@ function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): b
   return Object.keys(value).every((key) => keys.includes(key));
 }
 
+export function parseAvatarId(value: unknown): AvatarId | null {
+  return typeof value === 'string' && AVATAR_ID_SET.has(value)
+    ? value as AvatarId
+    : null;
+}
+
+export function defaultAvatarIdForSeat(seat: 0 | 1): AvatarId {
+  return seat === 0 ? 'character-female-a' : 'character-male-a';
+}
+
+export function defaultAvatarIdForPlayer(playerId: string, seat: 0 | 1): AvatarId {
+  if (playerId === 'player-1') return defaultAvatarIdForSeat(0);
+  if (playerId === 'player-2') return defaultAvatarIdForSeat(1);
+  return defaultAvatarIdForSeat(seat);
+}
+
+export function normalizeAvatarId(
+  value: unknown,
+  playerId: string,
+  seat: 0 | 1,
+): AvatarId {
+  return parseAvatarId(value) ?? defaultAvatarIdForPlayer(playerId, seat);
+}
+
+function hasOptionalAvatarId(value: Record<string, unknown>): boolean {
+  return !Object.hasOwn(value, 'avatarId') || parseAvatarId(value.avatarId) !== null;
+}
+
 export function isHumanAiCreateOptions(value: unknown): value is HumanAiCreateOptions {
   if (!isRecord(value) || !hasOnlyKeys(value, [
     'roomMode',
@@ -217,6 +268,7 @@ export function isHumanAiCreateOptions(value: unknown): value is HumanAiCreateOp
     'playerId',
     'pairingTokenHash',
     'pairingExpiresAt',
+    'avatarId',
   ])) return false;
 
   return value.roomMode === 'human-ai'
@@ -226,7 +278,8 @@ export function isHumanAiCreateOptions(value: unknown): value is HumanAiCreateOp
     && SHA_256_PATTERN.test(value.pairingTokenHash)
     && typeof value.pairingExpiresAt === 'number'
     && Number.isSafeInteger(value.pairingExpiresAt)
-    && value.pairingExpiresAt >= 0;
+    && value.pairingExpiresAt >= 0
+    && hasOptionalAvatarId(value);
 }
 
 export function isHumanAiHumanJoinOptions(value: unknown): value is HumanAiHumanJoinOptions {
@@ -235,13 +288,15 @@ export function isHumanAiHumanJoinOptions(value: unknown): value is HumanAiHuman
     'controllerKind',
     'playerId',
     'pairingToken',
+    'avatarId',
   ])) return false;
 
   return value.roomMode === 'human-ai'
     && value.controllerKind === 'human'
     && value.playerId === 'player-1'
     && typeof value.pairingToken === 'string'
-    && PAIRING_TOKEN_PATTERN.test(value.pairingToken);
+    && PAIRING_TOKEN_PATTERN.test(value.pairingToken)
+    && hasOptionalAvatarId(value);
 }
 
 /**
@@ -257,11 +312,15 @@ export function parseJoinOptions(value: unknown): JoinOptions | null {
     return { roomMode: 'human-human', controllerKind: 'human' };
   }
   if (
-    hasOnlyKeys(value, ['roomMode', 'controllerKind'])
+    hasOnlyKeys(value, ['roomMode', 'controllerKind', 'avatarId'])
     && value.roomMode === 'human-human'
     && value.controllerKind === 'human'
+    && hasOptionalAvatarId(value)
   ) {
-    return { roomMode: 'human-human', controllerKind: 'human' };
+    const avatarId = parseAvatarId(value.avatarId);
+    return avatarId === null
+      ? { roomMode: 'human-human', controllerKind: 'human' }
+      : { roomMode: 'human-human', controllerKind: 'human', avatarId };
   }
   if (isHumanAiCreateOptions(value)) return value;
   if (isHumanAiHumanJoinOptions(value)) return value;
