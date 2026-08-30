@@ -18,6 +18,24 @@ npm run dev
 
 Open `http://127.0.0.1:5173` in one browser profile, select **Create Room**, then use the displayed room code or invite URL in a second browser profile. Session storage is isolated per profile, so two separate profiles or private windows are the most reliable local setup.
 
+When the game is open in a WebMCP-capable built-in browser, the page registers
+`chat`, `join_game`, `observe_game`, and `move_player_two` once for that page.
+`join_game` takes exactly `{ "code": "ROOM_CODE" }` on an unseated landing page:
+create a normal room as Explorer 1 in another browser, copy its room code, and
+give that code to the agent. The call succeeds only after the game server assigns
+the built-in browser as Explorer 2. The agent can then observe the safe current
+level and request server-authoritative Explorer 2 movement, waiting for either
+acceptance or confirmed arrival. Explorer 1 pages cannot use the observation or
+movement tools. This browser flow differs from the stdio teammate below:
+WebMCP joins a room the human already created, while stdio `start_game` creates a
+human-AI room and returns a one-time Explorer 1 link.
+
+Calling `chat` with `{ "message": "Hold Plate A" }` displays the message in the
+active game for five seconds; a newer message replaces it and restarts that
+timer. Messages are limited to 500 Unicode characters. On the landing page
+`chat` returns `NO_ACTIVE_GAME`, and ordinary browsers without
+`document.modelContext` continue to run the game without registering tools.
+
 Movement is pointer-only: click a reachable destination and the authoritative server computes the route. A click beyond a closed door stops the explorer at the threshold; after a partner opens the door, click the destination again.
 
 The development launcher watches both client and authoritative game/server

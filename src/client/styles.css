@@ -179,6 +179,37 @@ input:focus-visible {
   text-align: center;
 }
 
+.chat-popup {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  top: 6.5rem;
+  width: min(calc(100% - 2rem), 34rem);
+  padding: .75rem 1rem;
+  transform: translateX(-50%);
+  border: 1px solid #7ee8c0;
+  border-radius: 10px;
+  color: var(--ink);
+  background: #182a32f2;
+  box-shadow: 0 10px 30px #0009, inset 0 1px #ffffff17;
+  pointer-events: none;
+}
+
+.chat-popup-label {
+  color: var(--mint);
+  font-size: .68rem;
+  font-weight: 800;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+}
+
+.chat-popup p {
+  margin: .25rem 0 0;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+  white-space: pre-wrap;
+}
+
 .facility-root {
   position: relative;
   display: grid;
@@ -303,4 +334,5 @@ input:focus-visible {
   .hud > div { text-align: center; }
   .game-shell { padding: .35rem; }
   .objective { font-size: .86rem; }
+  .chat-popup { top: 9rem; }
 }

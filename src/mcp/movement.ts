@@ -176,13 +176,20 @@ export class PlayerTwoMovementCoordinator {
       this.#settlePending('unavailable', 'Player 2 is no longer available.');
       return;
     }
+    if (pending !== null && player !== null && player.lastMoveSeq > pending.seq) {
+      this.#settlePending(
+        'superseded',
+        'A newer authoritative movement command replaced this route.',
+      );
+      return;
+    }
     if (
       pending === null
       || pending.accepted === null
       || pending.waitUntil !== 'arrived'
       || player === null
       || (player.routeKind !== 'none' && snapshot.phase !== 'completed')
-      || player.lastMoveSeq < pending.seq
+      || player.lastMoveSeq !== pending.seq
     ) return;
 
     const destination = pending.accepted.routeKind === 'threshold-stop'

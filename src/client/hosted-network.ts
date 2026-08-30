@@ -109,6 +109,17 @@ export class HostedNetwork implements NetworkTransport {
     }
   }
 
+  async joinAsPlayerTwo(roomId: string): Promise<void> {
+    void roomId;
+    const error = new HostedApiError(
+      400,
+      'hosted-mcp-unsupported',
+      'Hosted play currently supports a browser partner. Use the local app for the Codex teammate.',
+    );
+    this.#reportConnectError(error);
+    throw error;
+  }
+
   async reconnectIfMatching(roomId: string): Promise<boolean> {
     const saved = savedSeat();
     if (saved === null || saved.roomId !== roomId) return false;
@@ -127,8 +138,10 @@ export class HostedNetwork implements NetworkTransport {
     }
   }
 
-  sendMove(command: MoveTargetCommand): void {
+  sendMove(command: MoveTargetCommand): boolean {
+    if (this.#connection() === null) return false;
     void this.#sendMove(command);
+    return true;
   }
 
   restart(command: RestartCommand): void {
@@ -167,7 +180,15 @@ export class HostedNetwork implements NetworkTransport {
         connection.token,
       );
       this.#applySnapshot(payload.snapshot);
-      this.#events.onMoveResult(payload.result);
+      const player = payload.snapshot.players.find((candidate) => candidate.id === this.#playerId);
+      this.#events.onMoveResult({
+        seq: command.seq,
+        accepted: payload.result.accepted,
+        ...(payload.result.reason === undefined ? {} : { reason: payload.result.reason }),
+        routeKind: payload.result.routeKind,
+        effectiveWorldX: player?.worldX ?? command.worldX,
+        effectiveWorldY: player?.worldY ?? command.worldY,
+      });
     } catch (error) {
       this.#handleRuntimeError(error);
     }

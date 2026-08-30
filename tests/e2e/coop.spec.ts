@@ -37,6 +37,16 @@ interface Diagnostics {
   sendMoveTarget(point: { x: number; y: number }): void;
 }
 
+interface BrowserChatTool {
+  name?: string;
+  execute(input: unknown): unknown;
+}
+
+interface BrowserSiteTool {
+  name: string;
+  execute(input?: unknown): unknown | Promise<unknown>;
+}
+
 const CELL_SIZE = 48;
 const center = (x: number, y: number) => ({
   x: (x + 0.5) * CELL_SIZE,
@@ -184,6 +194,205 @@ async function captureGate(
     clip,
   });
 }
+
+test('browser chat tool composes with the active game popup lifecycle', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chrome', 'The browser API composition path runs once.');
+  test.setTimeout(20_000);
+  await page.addInitScript(() => {
+    const browserWindow = window as Window & {
+      __CHAT_TOOL__?: BrowserChatTool;
+      __WEBMCP_TOOLS__?: Record<string, BrowserSiteTool>;
+    };
+    browserWindow.__WEBMCP_TOOLS__ = {};
+    Object.defineProperty(document, 'modelContext', {
+      configurable: true,
+      value: {
+        async registerTool(tool: BrowserSiteTool) {
+          browserWindow.__WEBMCP_TOOLS__![tool.name] = tool;
+          if (tool.name === 'chat') browserWindow.__CHAT_TOOL__ = tool;
+        },
+      },
+    });
+  });
+  await page.goto('/?e2e=1');
+
+  const inactiveResult = await page.evaluate(() =>
+    (window as Window & { __CHAT_TOOL__?: BrowserChatTool }).__CHAT_TOOL__?.execute({ message: 'Too early' }));
+  expect(inactiveResult).toMatchObject({ displayed: false, error: { code: 'NO_ACTIVE_GAME' } });
+
+  await page.getByTestId('create-room').click();
+  await expect(page.getByTestId('game-shell')).toBeVisible();
+  const firstResult = await page.evaluate(() =>
+    (window as Window & { __CHAT_TOOL__?: BrowserChatTool }).__CHAT_TOOL__?.execute({ message: '<b>Meet at the gate</b>' }));
+  expect(firstResult).toEqual({ displayed: true, dismissAfterMs: 5_000 });
+  await expect(page.getByTestId('chat-popup')).toBeVisible();
+  await expect(page.getByTestId('chat-message')).toHaveText('<b>Meet at the gate</b>');
+  await expect(page.getByTestId('chat-message').locator('b')).toHaveCount(0);
+
+  await page.waitForTimeout(250);
+  await page.evaluate(() =>
+    (window as Window & { __CHAT_TOOL__?: BrowserChatTool }).__CHAT_TOOL__?.execute({ message: 'Hold Plate A' }));
+  await expect(page.getByTestId('chat-message')).toHaveText('Hold Plate A');
+  await page.waitForTimeout(4_800);
+  await expect(page.getByTestId('chat-popup')).toBeVisible();
+  await expect(page.getByTestId('chat-popup')).toBeHidden({ timeout: 1_000 });
+});
+
+test('browser WebMCP joins as Player 2, observes safely, and confirms arrival', async ({ browser, page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chrome', 'The experimental browser adapter composition path runs once.');
+  test.setTimeout(35_000);
+  const installWebMcpCapture = async (target: Page): Promise<void> => {
+    await target.addInitScript(() => {
+      const browserWindow = window as Window & { __WEBMCP_TOOLS__?: Record<string, BrowserSiteTool> };
+      browserWindow.__WEBMCP_TOOLS__ = {};
+      Object.defineProperty(document, 'modelContext', {
+        configurable: true,
+        value: {
+          async registerTool(tool: BrowserSiteTool) {
+            browserWindow.__WEBMCP_TOOLS__![tool.name] = tool;
+          },
+        },
+      });
+    });
+  };
+
+  await installWebMcpCapture(page);
+  await page.goto('/?e2e=1');
+  await page.waitForFunction(() =>
+    (window as Window & { __WEBMCP_TOOLS__?: Record<string, BrowserSiteTool> })
+      .__WEBMCP_TOOLS__?.observe_game !== undefined);
+  const landingObservation = await page.evaluate(async () =>
+    (window as Window & { __WEBMCP_TOOLS__?: Record<string, BrowserSiteTool> })
+      .__WEBMCP_TOOLS__!.observe_game!.execute({}));
+  expect(landingObservation).toMatchObject({ status: 'unavailable' });
+  await page.getByTestId('create-room').click();
+  const id = await roomId(page);
+  const playerOneObservation = await page.evaluate(async () =>
+    (window as Window & { __WEBMCP_TOOLS__?: Record<string, BrowserSiteTool> })
+      .__WEBMCP_TOOLS__!.observe_game!.execute({}));
+  expect(playerOneObservation).toMatchObject({ status: 'wrong_seat' });
+
+  const staleContext = await browser.newContext();
+  const stalePage = await staleContext.newPage();
+  await stalePage.route('**/*.glb', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await route.continue();
+  });
+  await installWebMcpCapture(stalePage);
+  try {
+    await stalePage.goto('/?e2e=1');
+    await stalePage.waitForFunction(() =>
+      (window as Window & { __WEBMCP_TOOLS__?: Record<string, BrowserSiteTool> })
+        .__WEBMCP_TOOLS__?.join_game !== undefined);
+    const staleJoin = stalePage.evaluate(async (code) => {
+      try {
+        await (window as Window & { __WEBMCP_TOOLS__?: Record<string, BrowserSiteTool> })
+          .__WEBMCP_TOOLS__!.join_game!.execute({ code });
+        return '';
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+      }
+    }, id);
+    await stalePage.getByTestId('return-to-lobby').click();
+    await expect(staleJoin).resolves.toMatch(/cancelled|stale/i);
+    await expect(stalePage.getByTestId('landing-shell')).toBeVisible();
+  } finally {
+    await staleContext.close();
+  }
+
+  const agentContext = await browser.newContext();
+  const agentPage = await agentContext.newPage();
+  await installWebMcpCapture(agentPage);
+  try {
+    await agentPage.goto('/?e2e=1');
+    await agentPage.waitForFunction(() =>
+      Object.keys((window as Window & { __WEBMCP_TOOLS__?: Record<string, BrowserSiteTool> })
+        .__WEBMCP_TOOLS__ ?? {}).length === 4);
+    const missingRoomError = await agentPage.evaluate(async () => {
+      try {
+        await (window as Window & { __WEBMCP_TOOLS__?: Record<string, BrowserSiteTool> })
+          .__WEBMCP_TOOLS__!.join_game!.execute({ code: 'missing_room' });
+        return '';
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+      }
+    });
+    expect(missingRoomError).not.toBe('');
+    await expect(agentPage.getByTestId('landing-shell')).toBeVisible();
+
+    const joinAttempt = await agentPage.evaluate(async (code) => {
+      const tool = (window as Window & { __WEBMCP_TOOLS__?: Record<string, BrowserSiteTool> })
+        .__WEBMCP_TOOLS__!.join_game!;
+      const first = tool.execute({ code });
+      let concurrentError = '';
+      try {
+        await tool.execute({ code });
+      } catch (error) {
+        concurrentError = error instanceof Error ? error.message : String(error);
+      }
+      return { joined: await first, concurrentError };
+    }, id);
+    expect(joinAttempt).toEqual({
+      joined: { joined: true, roomId: id, playerId: 'player-2' },
+      concurrentError: 'join_game is available only from an unseated landing page.',
+    });
+
+    const observed = await agentPage.evaluate(async () =>
+      (window as Window & { __WEBMCP_TOOLS__?: Record<string, BrowserSiteTool> })
+        .__WEBMCP_TOOLS__!.observe_game!.execute({})) as {
+          session: { roomId: string; phase: string };
+          interactables: Array<{ id: string }>;
+          players: Array<{ id: string }>;
+        };
+    expect(observed.session).toMatchObject({ roomId: id, phase: 'playing' });
+    expect(observed.players.map(({ id: playerId }) => playerId)).toEqual(['player-1', 'player-2']);
+    expect(observed.interactables.some(({ id: interactableId }) => interactableId === 'plate_a')).toBe(true);
+    const serialized = JSON.stringify(observed);
+    expect(serialized).not.toContain('latchedGateIds');
+    expect(serialized).not.toContain('pairedWith');
+    expect(serialized).not.toContain('reconnectionToken');
+
+    const moved = await agentPage.evaluate(async () =>
+      (window as Window & { __WEBMCP_TOOLS__?: Record<string, BrowserSiteTool> })
+        .__WEBMCP_TOOLS__!.move_player_two!.execute({
+          target: { kind: 'interactable', id: 'plate_a' },
+          waitUntil: 'arrived',
+        }));
+    expect(moved).toMatchObject({
+      status: 'arrived',
+      target: { x: 5, y: 8 },
+      effectiveTarget: { x: 5, y: 8 },
+      currentPosition: { x: 5, y: 8 },
+      phase: 'playing',
+    });
+
+    await page.getByTestId('return-to-lobby').click();
+    await expect(agentPage.getByTestId('abandoned-overlay')).toBeVisible();
+    const terminalResults = await agentPage.evaluate(async () => {
+      const tools = (window as Window & { __WEBMCP_TOOLS__?: Record<string, BrowserSiteTool> })
+        .__WEBMCP_TOOLS__!;
+      return {
+        observation: await tools.observe_game!.execute({}),
+        movement: await tools.move_player_two!.execute({
+          target: { kind: 'grid', x: 5, y: 8 },
+          waitUntil: 'arrived',
+        }),
+      };
+    });
+    expect(terminalResults).toEqual({
+      observation: {
+        status: 'unavailable',
+        reason: 'The Player 2 browser session is no longer available.',
+      },
+      movement: {
+        status: 'unavailable',
+        reason: 'The Player 2 browser session is no longer available.',
+      },
+    });
+  } finally {
+    await agentContext.close();
+  }
+});
 
 test('two isolated clients solve, reconnect, and restart the authoritative puzzle', async ({ browser, page }, testInfo) => {
   test.setTimeout(60_000);

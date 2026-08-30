@@ -1,18 +1,10 @@
 import { Client, type Room } from '@colyseus/sdk';
-import {
-  COOPERATIVE_DISCOVERY_GOAL,
-  LEVEL_CATALOG,
-  createLevelInspection,
-  getLevelDefinition,
-  worldToGrid,
-  type InspectionObject,
-  type LevelId,
-  type LevelInspectionSource,
-  type InspectionTarget,
-} from '../game/index.ts';
 import { cloneSnapshot, readSnapshot, type CoopSnapshot } from '../client/state.ts';
 import { CoopStateSchema } from '../server/CoopRoom.ts';
 import { createPairingToken, type CreatedPairingToken } from '../server/pairing.ts';
+import { createTeammateObservation } from './game-tools-policy.ts';
+
+export { createTeammateDiscoveryView as createMcpDiscoveryView } from './game-tools-policy.ts';
 
 const DEFAULT_GAME_ENDPOINT = 'http://127.0.0.1:2567';
 const HUMAN_ORIGIN = process.env.THE_COOP_HUMAN_ORIGIN ?? 'http://127.0.0.1:5173';
@@ -57,116 +49,6 @@ function isMoveResult(value: unknown): value is MoveResultMessage {
     && Number.isFinite(result.effectiveWorldX)
     && typeof result.effectiveWorldY === 'number'
     && Number.isFinite(result.effectiveWorldY);
-}
-
-function levelIdFrom(value: string): LevelId {
-  return LEVEL_CATALOG.find(({ id }) => id === value)?.id ?? 'level_1';
-}
-
-function inspectionSource(snapshot: CoopSnapshot): LevelInspectionSource {
-  const levelId = levelIdFrom(snapshot.levelId);
-  const level = getLevelDefinition(levelId);
-  return {
-    levelId,
-    doorOpen: snapshot.doorOpen,
-    collectedKeycardIds: level.keycards
-      .filter(({ id }) => snapshot.collectedKeycardIds.includes(id))
-      .map(({ id }) => id),
-    latchedGateIds: snapshot.latchedGateIds.includes(level.doorId)
-      ? [level.doorId]
-      : [],
-    pressurePlates: level.pressurePlates.map(({ id }) => ({
-      id,
-      occupied: snapshot.pressurePlates.find((state) => state.id === id)?.occupied ?? false,
-    })),
-    teleporters: level.teleporters.map(({ id, power, pads }) => ({
-      id,
-      powered: snapshot.teleporters.find((state) => state.id === id)?.powered ?? false,
-      powerId: power.id,
-      padIds: [pads[0].id, pads[1].id],
-    })),
-    keycards: level.keycards.map(({ id }) => ({
-      id,
-      collected: snapshot.keycards.find((state) => state.id === id)?.collected
-        ?? snapshot.collectedKeycardIds.includes(id),
-    })),
-    relayButtons: level.relayButtons.map(({ id }) => ({
-      id,
-      occupiedBy: snapshot.relayButtons.find((state) => state.id === id)?.occupiedBy ?? null,
-    })),
-  };
-}
-
-export type McpDiscoveryInteractable = Omit<InspectionObject, 'pairedWith'>;
-
-export interface McpDiscoveryView {
-  level: {
-    id: LevelId;
-    number: number;
-    count: number;
-    name: string;
-  };
-  coordinateSystem: ReturnType<typeof createLevelInspection>['coordinateSystem'];
-  dimensions: ReturnType<typeof createLevelInspection>['dimensions'];
-  walls: ReturnType<typeof createLevelInspection>['walls'];
-  gate: {
-    id: 'gate_main';
-    open: boolean;
-    occupiedCells: ReturnType<typeof createLevelInspection>['gate']['occupiedCells'];
-  };
-  interactables: readonly McpDiscoveryInteractable[];
-  objective: {
-    summary: string;
-    complete: boolean;
-  };
-}
-
-function projectObservableInteractable(
-  interactable: InspectionObject,
-): McpDiscoveryInteractable {
-  return Object.freeze({
-    id: interactable.id,
-    kind: interactable.kind,
-    grid: interactable.grid,
-    world: interactable.world,
-    occupiedCells: interactable.occupiedCells,
-    ...(interactable.occupied === undefined ? {} : { occupied: interactable.occupied }),
-    ...(interactable.powered === undefined ? {} : { powered: interactable.powered }),
-    ...(interactable.active === undefined ? {} : { active: interactable.active }),
-    ...(interactable.collected === undefined ? {} : { collected: interactable.collected }),
-    ...(interactable.occupiedBy === undefined
-      ? {}
-      : { occupiedBy: interactable.occupiedBy }),
-  });
-}
-
-/**
- * Projects only state a teammate could discover from the current level.
- * Authored walkthroughs, hidden gate rules, and teleporter pairings stay internal.
- */
-export function createMcpDiscoveryView(snapshot: CoopSnapshot): McpDiscoveryView {
-  const inspection = createLevelInspection(inspectionSource(snapshot));
-  return Object.freeze({
-    level: Object.freeze({
-      id: inspection.level.id,
-      number: inspection.level.number,
-      count: inspection.level.count,
-      name: inspection.level.name,
-    }),
-    coordinateSystem: inspection.coordinateSystem,
-    dimensions: inspection.dimensions,
-    walls: inspection.walls,
-    gate: Object.freeze({
-      id: inspection.gate.id,
-      open: inspection.gate.open,
-      occupiedCells: inspection.gate.occupiedCells,
-    }),
-    interactables: Object.freeze(inspection.interactables.map(projectObservableInteractable)),
-    objective: Object.freeze({
-      summary: COOPERATIVE_DISCOVERY_GOAL,
-      complete: snapshot.phase === 'completed',
-    }),
-  });
 }
 
 export class TeammateSession {
@@ -243,42 +125,14 @@ export class TeammateSession {
       throw new Error('No active teammate session. Call start_game before observe_game.');
     }
 
-    const level = getLevelDefinition(levelIdFrom(snapshot.levelId));
-    const map = createMcpDiscoveryView(snapshot);
-    const players = snapshot.players.map((player) => ({
-      id: player.id,
-      connected: player.connected,
-      grid: worldToGrid({ x: player.worldX, y: player.worldY }, level),
-      world: { x: player.worldX, y: player.worldY },
-      routeState: player.routeKind,
-      lastMoveSeq: player.lastMoveSeq,
-    }));
-    const playerOne = players.find(({ id }) => id === 'player-1');
-    const playerTwo = players.find(({ id }) => id === 'player-2');
     const pairingAvailable = snapshot.phase === 'waitingForPlayers'
       && this.#pairing !== null
       && Date.now() < this.#pairing.expiresAt;
-
-    return {
-      session: {
-        status: snapshot.phase === 'waitingForPlayers'
-          ? 'waiting_for_player_one'
-          : room.reconnection.isReconnecting
-            ? 'reconnecting'
-            : snapshot.phase,
-        roomId: room.roomId,
-        phase: snapshot.phase,
-        tick: snapshot.tick,
-        levelEpoch: snapshot.levelEpoch,
-        pairingAvailable,
-      },
-      ...map,
-      players,
-      connectivity: {
-        playerOne: playerOne?.connected ?? false,
-        playerTwo: playerTwo?.connected ?? false,
-      },
-    };
+    return createTeammateObservation(snapshot, {
+      roomId: room.roomId,
+      reconnecting: room.reconnection.isReconnecting,
+      pairingAvailable,
+    });
   }
 
   onMoveResult(listener: MoveResultListener): () => void {
@@ -388,5 +242,3 @@ export class TeammateSession {
     });
   }
 }
-
-export type { InspectionTarget };
