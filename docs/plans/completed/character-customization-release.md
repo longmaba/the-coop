@@ -4,7 +4,7 @@ Date: 2026-08-30
 
 ## Status
 
-Active
+Completed
 
 ## Outcome
 
@@ -49,10 +49,10 @@ access policy.
 ## Progress
 
 - [x] Create the Beads release sequence and inspect current repository authority.
-- [ ] Audit and stage the release candidate.
-- [ ] Commit and push the verified source to `origin/main`.
-- [ ] Package, save, and privately deploy the Sites version.
-- [ ] Verify production status and finish clean-tree bookkeeping.
+- [x] Audit and stage the release candidate.
+- [x] Commit and push the verified source to `origin/main`.
+- [x] Package, save, and privately deploy the Sites version.
+- [x] Verify production status and finish clean-tree bookkeeping.
 
 ## Validation
 
@@ -65,5 +65,21 @@ access policy.
 
 ## Result
 
-Record the pushed commits, deployed version outcome, production URL, access
-posture, and any remaining limitation before moving this plan to completed.
+Completed on 2026-08-30.
+
+- Lore-compliant source commit
+  `e03c6b3a115c8c2472fe4ea6b424f7bdb3918d84` was pushed to both
+  `origin/main` and the existing Sites source repository.
+- The verified Sites archive included the Worker entrypoint, client build, D1
+  migration, hosting metadata, and all 12 selectable character models. Sites
+  version 3 was saved from that commit and its private production deployment
+  reached `succeeded` at `https://the-coop-game.longmaba.chatgpt.site`.
+- Post-deployment state is active with custom owner-only access: one allowed
+  account user, no workspace or tenant groups, and zero external visitors. An
+  unauthenticated request returned HTTP 401, and the recent Worker error query
+  returned zero events.
+- No in-app browser connection was available for a signed-in production
+  click-through. Live gameplay proof therefore remains the identical passing
+  Sites-mode two-browser E2E rather than a direct production interaction.
+- Final Beads and plan-state changes are committed and pushed separately from
+  the exact deployed source commit so the production artifact remains auditable.
