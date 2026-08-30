@@ -1,4 +1,4 @@
-import { createReadStream } from 'node:fs';
+import { createReadStream, realpathSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import type {
   IncomingMessage,
@@ -208,8 +208,16 @@ export async function startProductionServer(
   return { gameServer, httpServer, hostname, port: boundPort, staticRoot };
 }
 
-const isDirectEntry = process.argv[1] !== undefined
-  && import.meta.url === pathToFileURL(process.argv[1]).href;
+export function isDirectModule(moduleUrl: string, argvPath: string | undefined): boolean {
+  if (argvPath === undefined) return false;
+  try {
+    return realpathSync(fileURLToPath(moduleUrl)) === realpathSync(argvPath);
+  } catch {
+    return moduleUrl === pathToFileURL(argvPath).href;
+  }
+}
+
+const isDirectEntry = isDirectModule(import.meta.url, process.argv[1]);
 if (isDirectEntry) {
   const run = async (): Promise<void> => {
     const running = await startProductionServer({
