@@ -49,12 +49,21 @@ The server owns levels, routes, teleportation, collection, gate state,
 completion, replay, and advancement. Browser clients and the local MCP teammate
 render or report schema snapshots without local gameplay prediction.
 
-The MCP teammate controls only Player 2 and retains the existing three-tool
-surface. Observations expose the active level, mechanism geometry and state,
-players, routes, connectivity, and a neutral cooperative goal without exposing
-pairing or reconnection credentials. The player-facing schema intentionally
-omits authored solution steps, hidden gate requirements and latch state,
-teleporter pairings, and future-level interactable IDs. During gameplay, the
-teammate must reason from current observations, authoritative movement outcomes,
-and player conversation rather than inspecting repository source, tests, or
-design documentation for a solution.
+The stdio MCP teammate controls only Player 2 and retains the existing
+`start_game`, `observe_game`, and `move_player_two` surface with its independent
+game session. The experimental browser WebMCP adapter instead exposes `chat`,
+`join_game`, `observe_game`, and `move_player_two` on the page. A human creates a
+normal room first; `join_game` accepts exactly one bounded `code` string from an
+unseated landing page and succeeds only after the server confirms Player 2 in
+seat 2. The browser adapter uses the page's existing network and snapshot rather
+than creating a second session.
+
+Both teammate adapters use the same transport-neutral observation, target, and
+movement-settlement policy. Observations expose the active level, mechanism
+geometry and state, players, routes, connectivity, and a neutral cooperative
+goal without exposing pairing or reconnection credentials. The player-facing
+schema intentionally omits authored solution steps, hidden gate requirements
+and latch state, teleporter pairings, and future-level interactable IDs. During
+gameplay, the teammate must reason from current observations, authoritative
+movement outcomes, and player conversation rather than inspecting repository
+source, tests, or design documentation for a solution.

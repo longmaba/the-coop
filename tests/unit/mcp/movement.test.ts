@@ -199,6 +199,33 @@ describe('PlayerTwoMovementCoordinator', () => {
     await expect(move.outcome).resolves.toMatchObject({ status: 'arrived' });
   });
 
+  it('supersedes instead of arriving when authoritative state advances past the pending sequence', async () => {
+    const coordinator = new PlayerTwoMovementCoordinator(new FakeTimer());
+    const move = coordinator.begin(
+      snapshot({ lastMoveSeq: 4 }),
+      { x: 5, y: 8 },
+      'arrived',
+      [{ x: 5, y: 8 }],
+    );
+    coordinator.handleMoveResult({
+      seq: move.seq,
+      accepted: true,
+      routeKind: 'target',
+      effectiveTarget: { x: 5, y: 8 },
+    });
+
+    coordinator.observe(snapshot({
+      lastMoveSeq: move.seq + 1,
+      routeKind: 'none',
+      grid: { x: 5, y: 8 },
+    }));
+    await expect(move.outcome).resolves.toMatchObject({
+      status: 'superseded',
+      seq: move.seq,
+      reason: 'A newer authoritative movement command replaced this route.',
+    });
+  });
+
   it('reports threshold stops at the authoritative effective destination', async () => {
     const coordinator = new PlayerTwoMovementCoordinator(new FakeTimer());
     const move = coordinator.begin(snapshot(), { x: 10, y: 8 });

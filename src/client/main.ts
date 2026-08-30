@@ -1,5 +1,13 @@
 import type { MoveTargetCommand, RestartCommand, WorldPoint } from '../game/index.ts';
+import {
+  createTeammateObservation,
+  moveAcceptance,
+  movementSnapshot,
+  resolveTeammateMovementTarget,
+} from '../mcp/game-tools-policy.ts';
+import { PlayerTwoMovementCoordinator } from '../mcp/movement.ts';
 import { CueAudio } from './audio.ts';
+import { cleanupOwnedBrowserLifecycle, ownsBrowserLifecycle } from './lifecycle.ts';
 import { CoopNetwork, savedRoomId } from './network.ts';
 import { campaignPresentation } from './presentation.ts';
 import { TransientChatPopup } from './transient-chat.ts';
@@ -15,7 +23,14 @@ import {
   type ClientStatus,
   type CoopSnapshot,
 } from './state.ts';
-import { registerChatTool } from './webmcp.ts';
+import {
+  browserGameUnavailable,
+  browserMovementUnavailableReason,
+  registerWebMcpTools,
+  type BrowserGameUnavailable,
+  type BrowserJoinResult,
+  type BrowserMovementTarget,
+} from './webmcp.ts';
 import './styles.css';
 
 const app: HTMLElement = (() => {
@@ -33,6 +48,8 @@ let transitionSeq = 0;
 let lifecycleGeneration = 0;
 let status: ClientStatus = 'landing';
 let statusDetail = '';
+let browserToolTerminal = false;
+const playerTwoMovement = new PlayerTwoMovementCoordinator();
 
 const chatPopup = new TransientChatPopup({
   show(message) {
@@ -269,19 +286,55 @@ function renderHud(): void {
   if (abandoned !== null) { abandoned.hidden = status !== 'abandoned' && snapshot.phase !== 'abandoned'; setText('[data-testid="abandoned-detail"]', statusDetail || 'Your partner did not reconnect in time.'); }
 }
 
-function createNetwork(): CoopNetwork {
-  return new CoopNetwork({
-    onSnapshot(next) { snapshot = cloneSnapshot(next); renderHud(); },
-    onStatus(nextStatus, detail = '') { status = nextStatus; statusDetail = detail; if (nextStatus === 'reconnecting') audio.play('reconnect'); renderHud(); },
-    onSeat() { renderHud(); },
+function createNetwork(generation: number): CoopNetwork {
+  const createdNetwork = new CoopNetwork({
+    onSnapshot(next) {
+      if (!ownsBrowserLifecycle(lifecycleGeneration, network, generation, createdNetwork)) return;
+      snapshot = cloneSnapshot(next);
+      const localPlayer = snapshot.players.find(({ id }) => id === network?.playerId);
+      if (localPlayer !== undefined) moveSeq = Math.max(moveSeq, localPlayer.lastMoveSeq);
+      playerTwoMovement.observe(movementSnapshot(snapshot));
+      renderHud();
+    },
+    onStatus(nextStatus, detail = '') {
+      if (!ownsBrowserLifecycle(lifecycleGeneration, network, generation, createdNetwork)) return;
+      status = nextStatus;
+      statusDetail = detail;
+      if (nextStatus === 'reconnecting') audio.play('reconnect');
+      const unavailableReason = browserMovementUnavailableReason(nextStatus);
+      if (unavailableReason !== null) {
+        playerTwoMovement.markUnavailable(detail || unavailableReason);
+      }
+      if (nextStatus === 'error' || nextStatus === 'abandoned') {
+        browserToolTerminal = true;
+      }
+      renderHud();
+    },
+    onSeat() {
+      if (ownsBrowserLifecycle(lifecycleGeneration, network, generation, createdNetwork)) renderHud();
+    },
     onMoveResult(result) {
+      if (!ownsBrowserLifecycle(lifecycleGeneration, network, generation, createdNetwork)) return;
+      playerTwoMovement.handleMoveResult(moveAcceptance(result));
       facility?.setMoveFeedback(result.accepted, result.routeKind);
       audio.play(result.accepted ? 'click' : 'rejection');
     },
-    onRestarted() { renderHud(); },
-    onAdvanced() { renderHud(); },
-    onAbandoned() { status = 'abandoned'; statusDetail = 'Your partner did not reconnect in time.'; renderHud(); },
+    onRestarted() {
+      if (ownsBrowserLifecycle(lifecycleGeneration, network, generation, createdNetwork)) renderHud();
+    },
+    onAdvanced() {
+      if (ownsBrowserLifecycle(lifecycleGeneration, network, generation, createdNetwork)) renderHud();
+    },
+    onAbandoned() {
+      if (!ownsBrowserLifecycle(lifecycleGeneration, network, generation, createdNetwork)) return;
+      playerTwoMovement.markUnavailable('The browser session was abandoned.');
+      browserToolTerminal = true;
+      status = 'abandoned';
+      statusDetail = 'Your partner did not reconnect in time.';
+      renderHud();
+    },
   });
+  return createdNetwork;
 }
 
 async function startCreate(): Promise<void> {
@@ -289,6 +342,7 @@ async function startCreate(): Promise<void> {
   gameShell();
   status = 'creating';
   statusDetail = '';
+  browserToolTerminal = false;
   try {
     await createRenderer(generation);
   } catch (error: unknown) {
@@ -297,8 +351,13 @@ async function startCreate(): Promise<void> {
     return;
   }
   if (generation !== lifecycleGeneration) return;
-  network = createNetwork();
-  try { await network.create(); } catch { showConnectionError(); }
+  const attemptedNetwork = createNetwork(generation);
+  network = attemptedNetwork;
+  try {
+    await attemptedNetwork.create();
+  } catch {
+    showConnectionError(attemptedNetwork, generation);
+  }
 }
 
 async function startJoin(rawRoomId: string, pairingToken?: string): Promise<void> {
@@ -308,6 +367,7 @@ async function startJoin(rawRoomId: string, pairingToken?: string): Promise<void
   gameShell();
   status = 'joining';
   statusDetail = '';
+  browserToolTerminal = false;
   try {
     await createRenderer(generation);
   } catch (error: unknown) {
@@ -316,21 +376,26 @@ async function startJoin(rawRoomId: string, pairingToken?: string): Promise<void
     return;
   }
   if (generation !== lifecycleGeneration) return;
-  network = createNetwork();
+  const attemptedNetwork = createNetwork(generation);
+  network = attemptedNetwork;
   try {
-    const restored = await network.reconnectIfMatching(roomId);
+    const restored = await attemptedNetwork.reconnectIfMatching(roomId);
+    if (!ownsBrowserLifecycle(lifecycleGeneration, network, generation, attemptedNetwork)) return;
     if (!restored) {
-      await network.join(roomId, pairingToken === undefined ? undefined : {
+      await attemptedNetwork.join(roomId, pairingToken === undefined ? undefined : {
         roomMode: 'human-ai',
         controllerKind: 'human',
         playerId: 'player-1',
         pairingToken,
       });
     }
+    if (!ownsBrowserLifecycle(lifecycleGeneration, network, generation, attemptedNetwork)) return;
     if (pairingToken !== undefined) {
       history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
     }
-  } catch { showConnectionError(); }
+  } catch {
+    showConnectionError(attemptedNetwork, generation);
+  }
 }
 
 function showAssetError(error: unknown): void {
@@ -347,17 +412,26 @@ function showAssetError(error: unknown): void {
   renderHud();
 }
 
-function showConnectionError(): void {
-  const error = statusDetail || 'The room could not be reached.';
-  network?.dispose(true);
-  network = null;
-  snapshot = cloneSnapshot(EMPTY_SNAPSHOT);
-  status = 'landing';
-  history.replaceState(null, '', window.location.pathname);
-  landing(error);
+function showConnectionError(attemptedNetwork: CoopNetwork, generation: number): void {
+  cleanupOwnedBrowserLifecycle(
+    lifecycleGeneration,
+    network,
+    generation,
+    attemptedNetwork,
+    () => {
+      const error = statusDetail || 'The room could not be reached.';
+      attemptedNetwork.dispose(true);
+      network = null;
+      snapshot = cloneSnapshot(EMPTY_SNAPSHOT);
+      status = 'landing';
+      history.replaceState(null, '', window.location.pathname);
+      landing(error);
+    },
+  );
 }
 
 function returnToLobby(): void {
+  playerTwoMovement.markUnavailable('The browser left the Player 2 session.');
   network?.dispose(true);
   network = null;
   snapshot = cloneSnapshot(EMPTY_SNAPSHOT);
@@ -367,6 +441,102 @@ function returnToLobby(): void {
   statusDetail = '';
   history.replaceState(null, '', window.location.pathname);
   landing();
+}
+
+function currentBrowserGameUnavailable(): BrowserGameUnavailable | null {
+  return browserGameUnavailable({
+    status,
+    phase: snapshot.phase,
+    hasNetwork: network !== null,
+    seat: network?.seat ?? null,
+    playerId: network?.playerId ?? null,
+    roomId: network?.roomId ?? null,
+    terminal: browserToolTerminal,
+  });
+}
+
+async function joinGameFromWebMcp(code: string): Promise<BrowserJoinResult> {
+  if (status !== 'landing' || network !== null) {
+    throw new Error('join_game is available only from an unseated landing page.');
+  }
+  const generation = ++lifecycleGeneration;
+  let attemptedNetwork: CoopNetwork | null = null;
+  gameShell();
+  status = 'joining';
+  statusDetail = '';
+  browserToolTerminal = false;
+  try {
+    await createRenderer(generation);
+    if (generation !== lifecycleGeneration) throw new Error('The join_game attempt was cancelled by a newer page lifecycle.');
+    attemptedNetwork = createNetwork(generation);
+    network = attemptedNetwork;
+    await attemptedNetwork.joinAsPlayerTwo(code);
+    if (generation !== lifecycleGeneration || network !== attemptedNetwork) {
+      attemptedNetwork.dispose(true);
+      throw new Error('The join_game attempt became stale before seat confirmation.');
+    }
+    if (
+      attemptedNetwork.seat !== 1
+      || attemptedNetwork.playerId !== 'player-2'
+      || attemptedNetwork.roomId === null
+    ) {
+      throw new Error('The server did not confirm Player 2 in seat 2.');
+    }
+    return { joined: true, roomId: attemptedNetwork.roomId, playerId: 'player-2' };
+  } catch (error) {
+    if (generation === lifecycleGeneration) {
+      const detail = statusDetail || (error instanceof Error ? error.message : 'The room could not be reached.');
+      if (attemptedNetwork !== null) showConnectionError(attemptedNetwork, generation);
+      else landing(detail);
+      throw new Error(detail, { cause: error });
+    }
+    throw error;
+  }
+}
+
+function observeGameFromWebMcp(): Record<string, unknown> | BrowserGameUnavailable {
+  const unavailable = currentBrowserGameUnavailable();
+  if (unavailable !== null) return unavailable;
+  return createTeammateObservation(snapshot, {
+    roomId: network!.roomId!,
+    reconnecting: status === 'reconnecting',
+    pairingAvailable: false,
+  });
+}
+
+async function movePlayerTwoFromWebMcp(
+  target: BrowserMovementTarget,
+  waitUntil: 'accepted' | 'arrived',
+) {
+  const unavailable = currentBrowserGameUnavailable();
+  if (unavailable !== null) return unavailable;
+  const authoritative = movementSnapshot(snapshot);
+  const resolved = resolveTeammateMovementTarget(snapshot, target);
+  if (resolved === null) {
+    return {
+      status: 'rejected' as const,
+      seq: -1 as const,
+      target,
+      effectiveTarget: null,
+      currentPosition: authoritative.playerTwo?.grid ?? null,
+      phase: snapshot.phase,
+      reason: target.kind === 'interactable'
+        ? `Interactable ${target.id} is not available in ${snapshot.levelId}.`
+        : 'The target is outside the level grid.',
+    };
+  }
+  const pending = playerTwoMovement.begin(
+    authoritative,
+    resolved.command.grid,
+    waitUntil,
+    resolved.validArrivals,
+  );
+  if (!network!.sendMove({
+    seq: pending.seq,
+    worldX: resolved.command.world.x,
+    worldY: resolved.command.world.y,
+  })) playerTwoMovement.markUnavailable('Player 2 is disconnected from the local game server.');
+  return pending.outcome;
 }
 
 function installDiagnostics(): void {
@@ -389,7 +559,14 @@ function installDiagnostics(): void {
 declare global { interface Window { __THE_COOP_E2E__?: unknown; } }
 
 landing();
-registerChatTool((message) => chatPopup.show(message));
+void registerWebMcpTools({
+  displayMessage: (message) => chatPopup.show(message),
+  joinGame: joinGameFromWebMcp,
+  observeGame: observeGameFromWebMcp,
+  movePlayerTwo: movePlayerTwoFromWebMcp,
+}).catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : 'WebMCP tool registration failed.');
+});
 installDiagnostics();
 const pairingInvite = pairingInviteFromUrl();
 const startupRoom = pairingInvite?.roomId ?? roomIdFromUrl() ?? savedRoomId();

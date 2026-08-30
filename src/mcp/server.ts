@@ -2,27 +2,15 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
+import { GRID_HEIGHT, GRID_WIDTH } from '../game/index.ts';
 import {
-  GRID_HEIGHT,
-  GRID_WIDTH,
-  LEVEL_CATALOG,
-  getLevelDefinition,
-  resolveInspectionTarget,
-  teleporterForPad,
-  worldToGrid,
-  type GridPoint,
-  type InspectionTarget,
-  type LevelId,
-  type ResolvedInspectionTarget,
-  type TeleporterPadId,
-} from '../game/index.ts';
-import type { CoopSnapshot } from '../client/state.ts';
-import {
-  PlayerTwoMovementCoordinator,
-  type MoveAcceptance,
-  type MovementSnapshot,
-} from './movement.ts';
-import { TeammateSession, type MoveResultMessage } from './session.ts';
+  moveAcceptance,
+  movementSnapshot,
+  resolveTeammateMovementTarget,
+  type TeammateMovementTarget,
+} from './game-tools-policy.ts';
+import { PlayerTwoMovementCoordinator } from './movement.ts';
+import { TeammateSession } from './session.ts';
 
 const INSTRUCTIONS = [
   'Control only Player 2 in The Coop. Use these tools only for requests about this game.',
@@ -35,22 +23,6 @@ const INSTRUCTIONS = [
   'A request to stay on a plate means arrive there and issue no newer movement.',
   'Teleporter and exit moves report the actual authoritative cell where Player 2 stopped.',
 ].join(' ');
-
-const INTERACTABLE_TARGET_IDS = [
-  'plate_a',
-  'plate_b',
-  'teleporter_alpha_power',
-  'teleporter_beta_power',
-  'teleporter_alpha_home',
-  'teleporter_alpha_annex',
-  'teleporter_beta_home',
-  'teleporter_beta_annex',
-  'keycard_alpha',
-  'keycard_beta',
-  'gate_button_a',
-  'gate_button_b',
-  'exit_zone',
-] as const;
 
 const targetSchema = z.discriminatedUnion('kind', [
   z.object({
@@ -74,108 +46,14 @@ function toolResult(value: Record<string, unknown>) {
   };
 }
 
-function levelIdFrom(value: string): LevelId {
-  return LEVEL_CATALOG.find(({ id }) => id === value)?.id ?? 'level_1';
-}
-
-function movementSnapshot(snapshot: CoopSnapshot): MovementSnapshot {
-  const playerTwo = snapshot.players.find(({ id }) => id === 'player-2');
-  const level = getLevelDefinition(levelIdFrom(snapshot.levelId));
-  return {
-    levelEpoch: snapshot.levelEpoch,
-    phase: snapshot.phase,
-    playerTwo: playerTwo === undefined
-      ? null
-      : {
-          connected: playerTwo.connected,
-          lastMoveSeq: playerTwo.lastMoveSeq,
-          routeKind: playerTwo.routeKind,
-          grid: worldToGrid({ x: playerTwo.worldX, y: playerTwo.worldY }, level),
-        },
-  };
-}
-
-function moveAcceptance(result: MoveResultMessage): MoveAcceptance {
-  return {
-    seq: result.seq,
-    accepted: result.accepted,
-    routeKind: result.routeKind,
-    effectiveTarget: worldToGrid({
-      x: result.effectiveWorldX,
-      y: result.effectiveWorldY,
-    }),
-    ...(result.reason === undefined ? {} : { reason: result.reason }),
-  };
-}
-
-const TELEPORTER_PAD_IDS = new Set<TeleporterPadId>([
-  'teleporter_alpha_home',
-  'teleporter_alpha_annex',
-  'teleporter_beta_home',
-  'teleporter_beta_annex',
-]);
-
-function isTeleporterPadId(id: string): id is TeleporterPadId {
-  return TELEPORTER_PAD_IDS.has(id as TeleporterPadId);
-}
-
-type InteractableTargetId = typeof INTERACTABLE_TARGET_IDS[number];
-const INTERACTABLE_TARGET_ID_SET = new Set<string>(INTERACTABLE_TARGET_IDS);
-
-function isInteractableTargetId(id: string): id is InteractableTargetId {
-  return INTERACTABLE_TARGET_ID_SET.has(id);
-}
-
-export type McpMovementTarget =
-  | { kind: 'interactable'; id: string }
-  | { kind: 'grid'; x: number; y: number };
-
-export interface ResolvedMcpMovementTarget {
-  command: ResolvedInspectionTarget;
-  validArrivals: readonly GridPoint[];
-}
-
-/**
- * Resolves only interactables present in the active level. Semantic targets
- * retain every cell where the authoritative simulation can stop movement.
- */
-export function resolveMcpMovementTarget(
-  snapshot: CoopSnapshot,
-  target: McpMovementTarget,
-): ResolvedMcpMovementTarget | null {
-  const level = getLevelDefinition(levelIdFrom(snapshot.levelId));
-  const inspectionTarget: InspectionTarget | null = target.kind === 'grid'
-    ? target
-    : isInteractableTargetId(target.id)
-      ? { kind: 'interactable', id: target.id }
-      : null;
-  if (inspectionTarget === null) return null;
-  const command = resolveInspectionTarget(inspectionTarget, level.id);
-  if (command === null) return null;
-  if (inspectionTarget.kind === 'interactable' && inspectionTarget.id === 'exit_zone') {
-    return { command, validArrivals: level.exitCells };
-  }
-  if (
-    inspectionTarget.kind !== 'interactable'
-    || !isTeleporterPadId(inspectionTarget.id)
-  ) {
-    return { command, validArrivals: [command.grid] };
-  }
-
-  const pairing = teleporterForPad(level, inspectionTarget.id);
-  if (pairing === null) return null;
-  return {
-    command,
-    validArrivals: [command.grid, pairing.destination.grid],
-  };
-}
-
 export interface TeammateMcpRuntime {
   server: McpServer;
   session: TeammateSession;
   movement: PlayerTwoMovementCoordinator;
   close(): Promise<void>;
 }
+
+export { resolveTeammateMovementTarget as resolveMcpMovementTarget } from './game-tools-policy.ts';
 
 export function createTeammateMcpRuntime(
   session = new TeammateSession(),
@@ -244,7 +122,7 @@ export function createTeammateMcpRuntime(
     }
 
     const authoritative = movementSnapshot(snapshot);
-    const resolved = resolveMcpMovementTarget(snapshot, target);
+    const resolved = resolveTeammateMovementTarget(snapshot, target as TeammateMovementTarget);
     if (resolved === null) {
       return toolResult({
         status: 'rejected',
