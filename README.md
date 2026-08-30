@@ -152,8 +152,11 @@ The server owns movement, phase changes, collision rules, mechanisms,
 completion, replay, and advancement. Clients send sequenced target requests and
 render schema snapshots without local gameplay prediction.
 
-The repository does not include separate license metadata for the supplied
-asset pack. Confirm its redistribution terms before publishing a public build.
+## License
+
+Source code and documentation are licensed under the [MIT License](LICENSE).
+The 3D files under `assets/` are available under
+[Creative Commons CC0 1.0 Universal](ASSET_LICENSES.md).
 
 ## Verify
 
