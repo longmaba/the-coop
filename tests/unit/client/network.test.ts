@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   normalizeSeatPayload,
+  resolveGameServerUrl,
   TRANSITION_MESSAGES,
   usesHostedTransport,
 } from '../../../src/client/network.ts';
@@ -46,5 +47,20 @@ describe('transport selection', () => {
     expect(usesHostedTransport('sites')).toBe(true);
     expect(usesHostedTransport('production')).toBe(false);
     expect(usesHostedTransport('development')).toBe(false);
+  });
+
+  it('uses the browser origin for an ordinary production build', () => {
+    expect(resolveGameServerUrl(undefined, 'production', 'https://coop.example.test/play')).toBe(
+      'https://coop.example.test',
+    );
+  });
+
+  it('preserves explicit and development server endpoints', () => {
+    expect(resolveGameServerUrl(' https://games.example.test ', 'production', 'https://ignored.test'))
+      .toBe('https://games.example.test');
+    expect(resolveGameServerUrl(undefined, 'development', 'http://127.0.0.1:5173'))
+      .toBe('http://127.0.0.1:2567');
+    expect(resolveGameServerUrl(undefined, 'production', 'not a URL'))
+      .toBe('http://127.0.0.1:2567');
   });
 });

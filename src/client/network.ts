@@ -17,6 +17,8 @@ export const TRANSITION_MESSAGES = Object.freeze({
   advanced: 'levelAdvanced',
 });
 
+const LOCAL_GAME_SERVER_URL = 'http://127.0.0.1:2567';
+
 export interface ConnectionEvents {
   onSnapshot: (snapshot: CoopSnapshot) => void;
   onStatus: (status: ClientStatus, detail?: string) => void;
@@ -65,8 +67,25 @@ export function normalizeSeatPayload(payload: unknown): { playerId: string; seat
     : null;
 }
 
+export function resolveGameServerUrl(
+  configuredUrl: string | undefined,
+  mode: string,
+  browserOrigin: string | undefined,
+): string {
+  const configured = configuredUrl?.trim();
+  if (configured !== undefined && configured.length > 0) return configured;
+  if (mode !== 'production' || browserOrigin === undefined) return LOCAL_GAME_SERVER_URL;
+
+  try {
+    const origin = new URL(browserOrigin).origin;
+    return origin === 'null' ? LOCAL_GAME_SERVER_URL : origin;
+  } catch {
+    return LOCAL_GAME_SERVER_URL;
+  }
+}
+
 class ColyseusNetwork implements NetworkTransport {
-  #client = new Client(import.meta.env.VITE_GAME_SERVER_URL ?? 'http://127.0.0.1:2567');
+  #client: Client;
   #room: Room | null = null;
   #events: ConnectionEvents;
   #disposers: Array<() => void> = [];
@@ -74,7 +93,14 @@ class ColyseusNetwork implements NetworkTransport {
   #serverPlayerId: string | null = null;
   #snapshot = EMPTY_SNAPSHOT;
 
-  constructor(events: ConnectionEvents) { this.#events = events; }
+  constructor(events: ConnectionEvents) {
+    this.#events = events;
+    this.#client = new Client(resolveGameServerUrl(
+      import.meta.env.VITE_GAME_SERVER_URL,
+      import.meta.env.MODE,
+      typeof window === 'undefined' ? undefined : window.location.origin,
+    ));
+  }
 
   get roomId(): string | null { return this.#room?.roomId ?? null; }
   get playerId(): string | null { return this.#serverPlayerId ?? this.#room?.sessionId ?? null; }
