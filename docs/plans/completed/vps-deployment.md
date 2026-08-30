@@ -4,7 +4,7 @@ Date: 2026-08-30
 
 ## Status
 
-Active
+Completed
 
 ## Outcome
 
@@ -76,9 +76,9 @@ Out of scope:
 
 - [x] Inspect repository deployment boundaries and VPS topology.
 - [x] Implement and locally validate the same-origin production runtime.
-- [ ] Deploy an immutable release and start the isolated PM2 process.
-- [ ] Verify static delivery and real two-player multiplayer through the VPS.
-- [ ] Record the release, rollback command, and remaining public-route choice.
+- [x] Deploy an immutable release and start the isolated PM2 process.
+- [x] Verify static delivery and real two-player multiplayer through the VPS.
+- [x] Record the release, rollback command, and remaining public-route choice.
 
 ## Decisions
 
@@ -104,4 +104,20 @@ Out of scope:
 
 ## Result
 
-Pending implementation and VPS verification.
+Release `e7e44c7be1fd` is the only installed immutable release and is selected by
+`/srv/the-coop/current`. PM2 persists `the-coop` as an online fork-mode process
+using Node 24.12.0 and listening only on `127.0.0.1:6000`. The two pre-existing
+PM2 applications remained online and were not restarted.
+
+The VPS returned HTTP 200 for the compiled client and `OK` for
+`/__healthcheck`. Through an SSH forward from a browser-safe local port to VPS
+port 6000, two real Colyseus SDK clients created and joined the same room and
+reached `playing` with two players. The in-app browser was unavailable, so no
+additional visual browser assertion was captured.
+
+The user will route a Cloudflare public hostname to
+`http://127.0.0.1:6000`; no Cloudflare state was changed here. Until there is a
+subsequent known-good release, rollback means stopping only this application
+and saving the PM2 list: `pm2 stop the-coop && pm2 save`. Future releases can
+atomically repoint `current` to the previous verified release and restart only
+`the-coop`.

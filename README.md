@@ -25,6 +25,30 @@ dependencies. A game or server source edit restarts the authoritative process
 so rendered walls and server pathfinding stay on the same level definition;
 active rooms reset after that restart and should be rejoined.
 
+## Run on a VPS
+
+The production runtime serves the compiled Vite client, Colyseus matchmaking,
+health checks, and WebSocket upgrades from one origin:
+
+```bash
+npm ci
+npm run build
+npm prune --omit=dev
+npm run start:production
+```
+
+It binds to `127.0.0.1:6000` by default. `THE_COOP_HOST`, `THE_COOP_PORT`, and
+`THE_COOP_STATIC_ROOT` can override the binding and build directory. The
+tracked `deploy/ecosystem.config.cjs` runs the service as the single-process
+PM2 app `the-coop`; keep it single-process while rooms remain in memory.
+
+For Cloudflare Tunnel, route the public hostname to
+`http://127.0.0.1:6000` without path rewriting. Players visit the public HTTPS
+hostname on port 443; they should not browse directly to port 6000, which web
+Fetch implementations classify as a blocked port. Verify the origin through
+`/__healthcheck`. Restarting the process ends active rooms. The Codex teammate
+MCP remains a local-only companion and is not hosted by this service.
+
 ## Play with a Codex teammate by voice
 
 The repository also includes a project-scoped, local stdio MCP server that
@@ -118,4 +142,6 @@ npm run test:e2e
 npm audit --omit=dev
 ```
 
-The Playwright suite targets installed Chrome, Edge, and Firefox browsers. Production hosting and internet matchmaking are intentionally outside this first local vertical slice.
+The Playwright suite targets installed Chrome, Edge, and Firefox browsers. The
+ordinary VPS build uses same-origin Colyseus, while the dedicated ChatGPT Sites
+build uses its hosted transport adapter.
